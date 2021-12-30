@@ -15,7 +15,7 @@ tstpool::tstpool()
 {
 	bzero(this, sizeof(*this));
 	m_waittime.tv_sec = 3;
-	// 요거 클리어 먼저 안하면 인서트시 세그먼트 오류난다... stl::map 오류...
+	// 요거 클리어 먼저 안하면 인서트시 세그먼트 오류난다... stl::map 뻑...
 	m_connect.clear();
 }
 
@@ -168,7 +168,7 @@ void* mainthread(void* param)
 	int check_len, err = 0;
 	TST_STAT next;
 
-	// 리슨소켓이 지정되었으면 epoll에 등록한다
+	// 메인소켓이 지정되었으면 epoll에 등록한다
 	if (pool->m_sockmain > 0) {
 		memset(&ev, 0x00, sizeof(ev));
 #ifdef OLDEPOLL
@@ -182,7 +182,7 @@ void* mainthread(void* param)
 		if (epoll_ctl(pool->m_epfd, EPOLL_CTL_ADD, ev.data.fd, &ev) < 0)
 		{
 			TRACE("[epoll_ctl(EPOLL_CTL_ADD)] server sd:%d, failed add!(%s)\n", ev.data.fd, strerror(errno));
-			// 흐미 뭐지? 어케하노? 이런 일은 없을거라...이거 타면 시스템 죽는 중이라는...
+			// 흐미 뭐지? 어케하노? 이런 일은 없을거라...이거 타면 linux 시스템 죽는 중이라는...
 		}
 		else
 		{
@@ -286,8 +286,6 @@ void* mainthread(void* param)
 			} else if (pool->m_socktype > sock_listen) {
 				// 메인소켓이 사용자 지정한 클라이언트일 때의 동작
  				// 사용자 지정 호출 함수가 있다면 호출하고 워크쓰레드로 넘기자
-				// 메인 소켓이 클로즈 됬다면 심각한 상황이다.
-				// 이경우 다시 연결하고 싶다면 m_fmain 콜백을 최대한 활용하라
 				if (pool->m_fmain) {
 					it = pool->m_connect.find(sd);
 					next = pool->m_fmain(it == pool->m_connect.end() ? 0 : it->second);

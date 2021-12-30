@@ -261,6 +261,8 @@ namespace tst {
 // -------------------------------------------
 
 #if defined(DEBUGTRACE)
+#ifndef _DEBUGTRACE_
+#define _DEBUGTRACE_
 #define TRACE(...) \
 	/* do while(0) 문은 블록이 없는 if문에서도 구문 없이 사용하기 위한 방법이다 */ \
 	do { \
@@ -285,7 +287,7 @@ namespace tst {
 #else
 #define TRACE(...) 
 #endif
-
+#endif
 
 #endif
 

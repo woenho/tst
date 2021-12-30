@@ -48,6 +48,6 @@ cversion:
 	echo `$(CXX) -v`
 
 clean:
-	rm -f $(LIBTST) example *.o
+	rm -f $(LIBTST) *.o
 
 
