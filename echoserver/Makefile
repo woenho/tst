@@ -23,7 +23,6 @@ ifeq (release, $(findstring release, $(MAKECMDGOALS))) #"make clean release"으�
 	LFLAGS += -ltst
 else
 	CFLAGS += $(CFLAGS_DEBUG)
-	LIBTST = libtst_d.a
 	LFLAGS += -ltst_d
 ifeq (debugtrace, $(findstring debugtrace, $(MAKECMDGOALS))) #"make clean debugtrace"으로 clean 다음에 연이어 debugtrace 나올 수가 있다.
 	CFLAGS += -DDEBUGTRACE
@@ -39,7 +38,7 @@ release: all
 debugtrace: all
 
 $(TARGET): $(OBJS)
-	$(CXX) -o $(TARGET) $<  $(LFLAGS)
+	$(CXX) -o $@ $(OBJS)  $(LFLAGS)
 
 
 %.o: %.cpp
