@@ -473,7 +473,7 @@ void* workthread(void* param)
 			pthread_mutex_unlock(&me->mutex);
 		}
 
-		if (nStat == -1) {
+		if (nStat) {
 			// wait 실패시 -1 설정, errno 로 오류 확인 필요
 			// EBUSY : 16	/* Device or resource busy */
 			if (errno == EBUSY)
@@ -811,21 +811,6 @@ int tstpool::destroy(uint64_t wait_time)
 	TRACE("=== %s() terminated now\n", __func__);
 
 	return 1;
-}
-
-int tstpool::socket_connect(char* ip, uint16_t port, uint32_t max_recv_size, uint32_t max_send_size) {
-
-    int sd = INVALID_SOCKET;
-
-    //서버로 연결하고 TST_SOCKET 을 만든 뒤 epoll event 등록한다.
-
-	if (!m_main_thread || !m_main_run)
-		return 0;
-
-
-
-
-    return sd;
 }
 
 bool tstpool::need_send(int sd)

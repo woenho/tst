@@ -6,7 +6,7 @@
 * 레벨트리거 epoll 방식을 사용한다.
 * EPOLLONESHOT 을 지정해서 일부 엣지트리거 처럼 동작하게 하지만 엣지트리거를 사용하지 않는다
 * 이유는 두 개의 메시지가 연이어 도착했을 때, 첫번째 메시지만 처리하고 나머지는 읽지도 않은 상태에서
-* 레벨트리거방식으로 epoll_ctl()로  플래그 설정하면 다시 두번째 메시지에 대한 통지가 즉시 온다.
+* 레벨트리거방식으로 epoll_ctl()로 EPOLLIN 플래그 설정하면 다시 두번째 메시지에 대한 통지가 즉시 온다.
 * 엣지트리거를 사용하면 이 경우 두번째 메시지는 추가로 세번째 메시지가 올 때 가지 통지가 없다.
 * 즉 한 번에 들어온 모든 메시지를 처리해야한다. 이는 프로그래밍상 좀 불편한다고 판단한다(비추천)
 */
@@ -207,7 +207,6 @@ namespace tst {
 			); 
 		int destroy(uint64_t wait_time = (uint64_t)5e+9);
 		bool need_send(int sd);		// 먼저 send 버퍼 작업후에 호출하자
-		int socket_connect(char* ip, uint16_t port, uint32_t max_recv_size, uint32_t max_send_size); // tcp 클라인언트 소켓을 추가하려면 사용. 서버소켓 없이 클라이언트소켓들만으로도 사용할 수도 있다.
 		void closesocket(int sd);	// 클라이언트와 연결을 임의로 끊고 싶을 때 사용, 오류로 인한 close는 자동으로 처리된다.
 		
 		inline void addsocket(PTST_SOCKET socket) {
@@ -260,10 +259,10 @@ namespace tst {
 
 // -------------------------------------------
 
-#if defined(DEBUGTRACE)
 #ifndef _DEBUGTRACE_
 #define _DEBUGTRACE_
-#define TRACE(...) \
+#if defined(DEBUGTRACE)
+	#define TRACE(...) \
 	/* do while(0) 문은 블록이 없는 if문에서도 구문 없이 사용하기 위한 방법이다 */ \
 	do { \
 		struct timeval debug_now; \
@@ -285,7 +284,7 @@ namespace tst {
 		fflush(stdout); \
 	}while(0) 
 #else
-#define TRACE(...) 
+	#define TRACE(...) 
 #endif
 #endif
 
