@@ -198,7 +198,7 @@ void* tst_main(void* param)
 	} else {
 		// 서버소켓이 생성되지 않았다면 만들어진 워크쓰레드를 모두 종료하고 메인쓰레드도 종료한다
 		pool->m_main_run = 0;
-		TRACE("----------need main socket setting\n");
+		TRACE("tst ----------need main socket setting\n");
 	}
 
 
@@ -308,7 +308,7 @@ void* tst_main(void* param)
 			err = ioctl(sd, SIOCOUTQ, &check_len);	// tcp발신버퍼에 남은 바이트 수를 check_len에 넣어준다, 성공시 0 리턴
 		}
 
-		TRACE("main---events(%d), check_len(%d), err(%d)\n", events, check_len, err);
+		TRACE("tst main---events(%d), check_len(%d), err(%d)\n", events, check_len, err);
 
 		// 연결이 끊어진 소켓의 뒷처리
 		if ((events & EPOLLIN && !check_len) || err < 0 || events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR)) {
@@ -317,7 +317,7 @@ void* tst_main(void* param)
 			
 			if (pool->m_sockmain == sd) {
 				// 메인 소켓이 닫혔다.
-				TRACE("main socket is closed......\n");
+				TRACE("tst main socket is closed......\n");
 				pool->m_main_run = 0;
 				break;
 			}
@@ -358,7 +358,7 @@ void* tst_main(void* param)
 						socket->send->checked_len = check_len;
 					}
 					pool->m_workers[i].tst_socket = socket;
-					TRACE("request a job sd=%d, thread no=%d, socket=%lX\n", sd, i, ADDRESS(pool->m_workers[i].tst_socket));
+					TRACE("tst request a job sd=%d, thread no=%d, socket=%lX\n", sd, i, ADDRESS(pool->m_workers[i].tst_socket));
 					pthread_cond_signal(&pool->m_workers[i].hEvent);
 					pthread_mutex_unlock(&pool->m_workers[i].mutex);
 					nCheckCount--;
@@ -387,7 +387,7 @@ void* tst_main(void* param)
 	bzero(szThreadStatus, pool->m_thread_count);
 
 	// 모든 워크쓰레드가 정상종료 되었는지 검증한다, 각 쓰레드별로 경과시간을 최대 g_endwaittime 만큼 기다린다
-	TRACE("=== check exited all work threads endwait seconds(%.6f)\n", pool->m_endwaittime / 1e+9);
+	TRACE("tst === check exited all work threads endwait seconds(%.6f)\n", pool->m_endwaittime / 1e+9);
 
 	i = 0;
 	nanoseconds = 0;
@@ -409,11 +409,11 @@ void* tst_main(void* param)
 					seconds = timenow.tv_sec - pool->m_workers[i].begin_time.tv_sec;
 					nanoseconds = timenow.tv_nsec - pool->m_workers[i].begin_time.tv_nsec + (seconds * 1e+9);
 					if (nanoseconds >= pool->m_endwaittime) {
-						TRACE("=== thread no(%d), need force exit check %.6f / %.6f\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9, pool->m_endwaittime / 1e+9);
+						TRACE("tst === thread no(%d), need force exit check %.6f / %.6f\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9, pool->m_endwaittime / 1e+9);
 						szThreadStatus[i] = '9';
 						nCheckCount++;
 					} else {
-						TRACE("=== thread no(%d), elapsed time %.6f seconds, waittime %.6f\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9, pool->m_endwaittime / 1e+9);
+						TRACE("tst === thread no(%d), elapsed time %.6f seconds, waittime %.6f\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9, pool->m_endwaittime / 1e+9);
 					}
 				}
 			}
@@ -422,17 +422,17 @@ void* tst_main(void* param)
 
 	free(szThreadStatus);
 
-	TRACE("=== force kill. if still running thread\n");
+	TRACE("tst === force kill. if still running thread\n");
 	// 기다려도 종료하지 않은 쓰레드는 강제 종료 시킨다
 	for (i = 0; i < pool->m_thread_count; i++) {
 		if (pool->m_workers[i].thread_stat == tst_exited) {
-			TRACE("=== thread no(%d), exited check ok!\n", pool->m_workers[i].thread_no);
+			TRACE("tst === thread no(%d), exited check ok!\n", pool->m_workers[i].thread_no);
 		}
 		else {
 			clock_gettime(CLOCK_MONOTONIC, &timenow);
 			seconds = timenow.tv_sec - pool->m_workers[i].begin_time.tv_sec;
 			nanoseconds = timenow.tv_nsec - pool->m_workers[i].begin_time.tv_nsec + (seconds * 1e+9);
-			TRACE("=== thread no(%d), still running. force kill. run time(%.6f second)\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9);
+			TRACE("tst === thread no(%d), still running. force kill. run time(%.6f second)\n", pool->m_workers[i].thread_no, nanoseconds / 1e+9);
 			pthread_cancel(pool->m_workers[i].thread_id);
 		}
 	}
@@ -497,7 +497,7 @@ void* tst_work(void* param)
 		}
 
 #if 0
-		TRACE("workthread no(%d), getup or wakeup... status(%d, %d)\n", me->thread_no, me->thread_stat, errno);
+		TRACE("tst workthread no(%d), getup or wakeup... status(%d, %d)\n", me->thread_no, me->thread_stat, errno);
 #endif
 
 		// 메인쓰레드가 상태를 변경해 주고 이벤트 시그날을 보내준다
@@ -508,7 +508,7 @@ void* tst_work(void* param)
 			
 			socket = me->tst_socket;
 			// 실행명령 전달받음
-			TRACE("workthread no(%d), I got a job. excuted:%ju, sd:%d, socket:%lX\n", me->thread_no, me->exec_count, socket ? socket->sd : -1, ADDRESS(me->tst_socket));
+			TRACE("tst workthread no(%d), I got a job. excuted:%ju, sd:%d, socket:%lX\n", me->thread_no, me->exec_count, socket ? socket->sd : -1, ADDRESS(me->tst_socket));
 
 
 			if (socket->events & EPOLLIN) {
@@ -539,7 +539,7 @@ void* tst_work(void* param)
 #endif
 						}
 						clock_gettime(CLOCK_REALTIME, &data->trans_time);
-						TRACE("workthread auto read from(sd:%d):%s:\n", socket->sd, p);
+						TRACE("tst workthread auto read from(sd:%d):%s:\n", socket->sd, p);
 					}
 				} else {
 					next = tst_run;
@@ -555,7 +555,7 @@ void* tst_work(void* param)
 					if (data->result_len >= data->req_len) {
 						next = tst_run;
 					} else {
-						TRACE("workthread auto send to(sd:%d):%s:\n", socket->sd, &data->s[data->result_len]);
+						TRACE("tst workthread auto send to(sd:%d):%s:\n", socket->sd, &data->s[data->result_len]);
 						data->result_len += write(socket->sd, &data->s[data->result_len], data->req_len - data->result_len);
 						clock_gettime(CLOCK_REALTIME, &data->trans_time);
 						if (data->result_len < data->req_len)
@@ -579,7 +579,7 @@ void* tst_work(void* param)
 				me->most_elapsed = nanoseconds;
 
 			me->exec_count++;
-			TRACE("workthread no(%d), I finished a job. excuted:%ju, sd:%d, elapsed:%.6f , next:%d\n", me->thread_no, me->exec_count, socket ? socket->sd : -1, nanoseconds / 1e+9, next);
+			TRACE("tst workthread no(%d), I finished a job. excuted:%ju, sd:%d, elapsed:%.6f , next:%d\n", me->thread_no, me->exec_count, socket ? socket->sd : -1, nanoseconds / 1e+9, next);
 
 			// 구조상 이 값은 메인쓰레드와 웨크쓰레드가 같이 수정하므로 락을 건다
 			// 그리고 이 이하 lock ~ unlink 까지는 그 순서가 매우중요하므로 절대 수정 금지
@@ -641,13 +641,13 @@ void* tst_work(void* param)
 		} else if (me->thread_stat == tst_exit) {
 			
 			// 명시적으로 죽으라는 메시지를 받았다.
-			TRACE("workthread no(%d), my signal is tst_exit\n", me->thread_no);
+			TRACE("tst workthread no(%d), my signal is tst_exit\n", me->thread_no);
 
 			me->exit_code = 9;	// tst_exit 상태확인 하고 종료함
 
 			me->thread_stat = tst_exited;
 
-			TRACE("workthread no(%d), I'm going to exiting\n", me->thread_no);
+			TRACE("tst workthread no(%d), I'm going to exiting\n", me->thread_no);
 
 			break; /// exit from work loop
 		} else {
@@ -665,7 +665,7 @@ void* tst_work(void* param)
 
 	me->thread_stat = tst_exited;
 	
-	TRACE("workthread no(%d), terminated, excuted_count=%ju, most_elapsed=%.6f\n", me->thread_no, me->exec_count, me->most_elapsed / 1e+9);
+	TRACE("tst workthread no(%d), terminated, excuted_count=%ju, most_elapsed=%.6f\n", me->thread_no, me->exec_count, me->most_elapsed / 1e+9);
 
 	pthread_exit(0);
 }
