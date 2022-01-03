@@ -69,7 +69,7 @@ namespace tst {
 	typedef enum { tst_suspend = 0, tst_run, tst_send, tst_reconnected, tst_disconnect, tst_exit = 9, tst_exited } TST_STAT;
 
 	// 워크쓰레드가 호출할 사용자함수 형식
-	typedef TST_STAT(*ThreadFunction)(struct TST_SOCKET_T* psocket);
+	typedef TST_STAT(*tstFunction)(struct TST_SOCKET_T* psocket);
 	// TST_USER 구조체 삭제를 위한 함수
 	typedef void(*CleanFunction)(struct TST_USER_T* puser);
 
@@ -111,7 +111,7 @@ namespace tst {
 		// 사용자가 필요에 따라 직접 설정하여 사용하는 함수 정의(인수는 this)
 		// 쓰레드가 호출한 tst_func 에서 데이타처리를 하지 않고 추가로 다시 함수를 호출하고 싶다면 해당 소켓정보에 그 함수를 기술한다
 		// 쓰레드가 호출한 tst_func 에서 이 함수를 호출 하도록 구현되어야 한다
-		ThreadFunction func;		// 어떤 특정 client 에 대한 작업이 필요한 경우 설정하여 사용하면 되겠다.
+		tstFunction func;		// 어떤 특정 client 에 대한 작업이 필요한 경우 설정하여 사용하면 되겠다.
 
 		inline void initBuffer(uint32_t recv_len, uint32_t send_len){
 			if (recv_len > 1) {
@@ -163,14 +163,14 @@ namespace tst {
 		int				thread_no;		// 쓰레드 고유일련번호
 		pthread_t		thread_id;		// 쓰레드 아이디
 		pthread_attr_t	attr;			// 쓰레드 속성
-		tstpool* pool;					// tstpool pointer
-
-		TST_STAT		thread_stat;	// 쓰레드의 현재 상태 
-		// mutex 초기화(선언과 함께=PTHREAD_MUTEX_INITIALIZER) or pthread_mutex_init(&mutex,NULL);
-		pthread_mutex_t	mutex;			// 관리쓰레드는 각 워크쓰레드별로 뮤텍스를 관리한다
-		pthread_cond_t	hEvent;			// 쓰레드 깨움 이벤트시그널
-
+		tstpool*		pool;			// tstpool object's pointer
 		int				exit_code;		// 쓰레드 종료시 종료코드
+		TST_STAT		thread_stat;	// 쓰레드의 현재 상태
+		PTST_SOCKET		tst_socket;		// epoll로 부터 이벤트가 오면 소켓정보를 m_connect에서 찾아 여기에 할당하고 사용자함수를 호출
+
+		// mutex 초기화(선언과 함께=PTHREAD_MUTEX_INITIALIZER) or pthread_mutex_init(&mutex,NULL);
+		pthread_mutex_t	mutex;			// 쓰레드의 최적화숫자를 산정하기 위하여 각 워크쓰레드별로 뮤텍스를 관리한다
+		pthread_cond_t	hEvent;			// 쓰레드 깨움 이벤트시그널
 
 		// 쓰레드 통계
 		struct timespec	begin_time;		// 마지막 수행한 잡의 수행 시작 시각
@@ -182,9 +182,8 @@ namespace tst {
 		uint64_t		idle_count;		// 쓰레드가 쉬고있다
 
 		// thread function
-		ThreadFunction	tst_func;		// socket 으로부터 데이타가 들어오면 이를 처리할 사용자 함수
-		PTST_SOCKET		tst_socket;		// epoll 로 부터 이벤트가 오면 해당 소켓정보를 m_connect 에서 찾아 여기에 할당하고 사용자 함수를 부른다
-		ThreadFunction	tst_idle;		// 쓰레드가 쉬고있을 때 호출할 사용자 함수
+		tstFunction		tst_func;		// socket 으로부터 데이타가 들어오면 이를 처리할 사용자 함수
+		tstFunction		tst_idle;		// 쓰레드가 쉬고있을 때 호출할 사용자 함수
 	} THREADINFO, * PTHREADINFO;
 
 	//----------------------------------------
@@ -200,7 +199,7 @@ namespace tst {
 		int create(int thread_count				// 쓰레드풀에 생성할 쓰레드 숫자
 			, const char* bind_ip				// bind_port 가 0이면 무시된다
 			, unsigned short bind_port			// bind_port 가 0이면 서버소켓을 생성하지 않는다. 클라이언트소켓{socket_connect()}들 만으로 쓰레드 동작
-			, ThreadFunction func				// 사용자 함수
+			, tstFunction func				// 사용자 함수
 			, uint32_t max_recv_size=4096
 			, uint32_t max_send_size=4096
 			, pthread_attr_t* attr=NULL
@@ -223,14 +222,19 @@ namespace tst {
 
 		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 발신해라 (첨 등록에 EPOLLOUT 없다)
 		// 나중에 다른 클라이언트에 발신하고 싶으면 need_send() 호출해라
-		void setEventNewConnected(ThreadFunction func) { m_fconnected = func; }		// m_fconnected 함수 설정
-		void setEventDisonnected(ThreadFunction func) { m_fdisconnected = func; }	// m_fdisconnected 함수 설정
+		void setEventNewConnected(tstFunction func) { m_fconnected = func; }		// m_fconnected 함수 설정
+		void setEventDisonnected(tstFunction func) { m_fdisconnected = func; }	// m_fdisconnected 함수 설정
 
-		ThreadFunction m_fconnected;		// 새로운 연결이 들어 왔을 때 TST_SOCKET을 생성하고 epoll에 등록하기전에 호출해 준다
-		ThreadFunction m_fdisconnected;		// 연결이 종료되면 TST_SOCKET을 지우기 전에 호출해 준다
+		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라.
+		// 워크쓰레드가 보내도록 하자
+		// 만일 특정 클라이언트에 대한 연결을 허가하지 않는다면 tst_disconnect 를 리턴해라
+		// 새로운 연결이 들어 왔을 때 TST_SOCKET을 생성하고 epoll에 등록하기전에 호출해 준다
+		tstFunction m_fconnected;
+		tstFunction m_fdisconnected;		// 연결이 종료되면 TST_SOCKET을 지우기 전에 호출해 준다
+		
 		// m_fmain 이 함수는 매우 신중히 설정해야한다.
 		// 반드시 필요한 경우만 설정하여 사용하고 기본적 업무처리는 워크쓰레드로 넘겨야 한다
-		ThreadFunction m_fmain;				// 메인소켓이 사용자 지정소켓(sock_client)인 경우 워크쓰레드로 넘기기전에 호출한다
+		tstFunction m_fmain;				// 메인소켓이 사용자 지정소켓(sock_client)인 경우 워크쓰레드로 넘기기전에 호출한다
 
 	public:
 		struct in_addr m_bind_ip;			// server bind address

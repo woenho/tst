@@ -150,7 +150,7 @@ int	tstpool::tcp_connect(const char* host, u_short port_no, struct	sockaddr_in* 
 	return(fd);
 }
 
-void* mainthread(void* param)
+void* tst_main(void* param)
 {
 	tstpool* pool = (tstpool*)param;
 	uint32_t i;
@@ -229,34 +229,40 @@ void* mainthread(void* param)
 						socket->sd = sd;
 						socket->type = sock_sub;
 						memcpy(&socket->client, &client, sizeof(client));
-						socket->func = NULL;
 						it = pool->m_connect.find(sd);
-						next = tst_suspend;
-						if (it == pool->m_connect.end()) {
-							pool->addsocket(socket);
-							if (pool->m_fconnected)
-								next = pool->m_fconnected(socket);	// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라. 뭐크쓰레드가 보내도록 하자
-						}
-						else {
-							// 헐??
+						if (it != pool->m_connect.end()) {
+							// 헐?? 뭔가 가비지가 남았을까?
+							pool->closesocket(sd);
 						}
 
-						// epoll에 등록
-						memset(&ev, 0x00, sizeof(ev));
-						// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라. 뭐크쓰레드가 보내도록 하자
-						ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
-						if (next == tst_send)
-							ev.events |= EPOLLOUT;
-						ev.data.fd = sd;
-						if (epoll_ctl(pool->m_epfd, EPOLL_CTL_ADD, ev.data.fd, &ev) < 0)
-						{
-							TRACE("[epoll_ctl(EPOLL_CTL_ADD)] client sd:%d, failed add!(%s)\n", ev.data.fd, strerror(errno));
-							// 흐미 뭐지? 어케하노? 이런 일은 없을거라...
-#ifdef DEBUG
+						pool->addsocket(socket);
+						next = tst_suspend;
+						if (pool->m_fconnected) {
+							// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라.
+							// 워크쓰레드가 보내도록 하자
+							// 만일 특정 클라이언트에 대한 연결을 허가하지 않는다면 tst_disconnect 를 리턴해라
+							next = pool->m_fconnected(socket);
 						}
-						else {
-							TRACE("[epoll_ctl(EPOLL_CTL_ADD)] client sd:%d, added\n", ev.data.fd);
+
+						if (next < tst_reconnected) {
+							// epoll에 등록
+							memset(&ev, 0x00, sizeof(ev));
+							// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라. 뭐크쓰레드가 보내도록 하자
+							ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+							if (next == tst_send)
+								ev.events |= EPOLLOUT;
+							ev.data.fd = sd;
+							if (epoll_ctl(pool->m_epfd, EPOLL_CTL_ADD, ev.data.fd, &ev) < 0)
+							{
+								TRACE("[epoll_ctl(EPOLL_CTL_ADD)] client sd:%d, failed add!(%s)\n", ev.data.fd, strerror(errno));
+								// 흐미 뭐지? 어케하노? 이런 일은 없을거라...
+#ifdef DEBUG
+							} else {
+								TRACE("[epoll_ctl(EPOLL_CTL_ADD)] client sd:%d, added\n", ev.data.fd);
 #endif
+							}
+						} else {
+							pool->closesocket(sd);
 						}
 					}
 					// epoll에 서버소켓 수정 등록
@@ -268,8 +274,7 @@ void* mainthread(void* param)
 						TRACE("[epoll_ctl(EPOLL_CTL_MOD)] server sd:%d, failed mod!(%s)\n", ev.data.fd, strerror(errno));
 						// 흐미 뭐지? 어케하노? 이런 일은 없을거라...
 #ifdef DEBUG
-					}
-					else {
+					} else {
 						TRACE("[epoll_ctl(EPOLL_CTL_MOD)] server sd:%d, mod success, ready to next connect\n", ev.data.fd);
 #endif
 					}
@@ -443,7 +448,7 @@ void* mainthread(void* param)
 	pthread_exit(0);
 }
 
-void* workthread(void* param)
+void* tst_work(void* param)
 {
 	PTHREADINFO me = (PTHREADINFO)param;
 	int nStat;
@@ -473,18 +478,17 @@ void* workthread(void* param)
 			pthread_mutex_unlock(&me->mutex);
 		}
 
-		if (nStat) {
+		if (nStat && nStat != ETIMEDOUT) {
 			// wait 실패시 -1 설정, errno 로 오류 확인 필요
 			// EBUSY : 16	/* Device or resource busy */
-			if (errno == EBUSY)
-			{
-				TRACE("workthread no(%d), timedwait() EBUSY, errno=%d\n", me->thread_no, errno);
-			}
-			else if (errno == EINVAL) {
-				TRACE("workthread no(%d), timedwait() EINVAL, errno=%d\n", me->thread_no, errno);
-			}
-			else {
-				TRACE("workthread no(%d), timedwait() error, errno=%d\n", me->thread_no, errno);
+			if (errno == EBUSY) {
+				TRACE("tst workthread no(%d), timedwait() EBUSY, errno=%d\n", me->thread_no, errno);
+			} else if (errno == EINVAL) {
+				TRACE("tst workthread no(%d), timedwait() EINVAL, errno=%d\n", me->thread_no, errno);
+			} else if (nStat == ETIMEDOUT) {
+				TRACE("tst workthread no(%d), timedwait() ETIMEDOUT, errno=%d\n", me->thread_no, errno);
+			} else {
+				TRACE("tst workthread no(%d), timedwait() error, errno=%d\n", me->thread_no, errno);
 				usleep(10000);// 10,000 마이크로초 => 10밀리초 => // 마이크로초 (백만분의1초 10의 -6승)
 			}
 
@@ -619,7 +623,7 @@ void* workthread(void* param)
 		} else if (me->thread_stat == tst_suspend) {
 			me->thread_stat = tst_run;
 
-			//TRACE("workthread no(%d), I got a idle time, idle count:%lu\n", me->thread_no, me->idle_count);
+			// TRACE("workthread no(%d), I got a idle time, idle count:%lu\n", me->thread_no, me->idle_count);
 
 			next = tst_suspend;
 
@@ -627,7 +631,7 @@ void* workthread(void* param)
 				next = me->tst_idle(NULL);
 
 			me->idle_count++;
-			//TRACE("workthread no(%d), I finished a idle time. count: %lu, next: %d\n", me->thread_no, me->idle_count, next);
+			// TRACE("workthread no(%d), I finished a idle time. count: %lu, next: %d\n", me->thread_no, me->idle_count, next);
 
 			// 구조상 이 값은 메인쓰레드와 웨크쓰레드가 같이 수정하므로 락을 건다
 			pthread_mutex_lock(&me->mutex);
@@ -666,7 +670,7 @@ void* workthread(void* param)
 	pthread_exit(0);
 }
 
-int tstpool::create(int thread_count, const char* bind_ip, unsigned short bind_port, ThreadFunction func
+int tstpool::create(int thread_count, const char* bind_ip, unsigned short bind_port, tstFunction func
 	, uint32_t max_recv_size, uint32_t max_send_size, pthread_attr_t* attr)
 {
 	// 만일 bind_port 가 유효하지 않다면 이미 사용자 가 메인 소켓에 대한 처리를 환료하고 create() 함수를 했다고 가정한다
@@ -707,12 +711,12 @@ int tstpool::create(int thread_count, const char* bind_ip, unsigned short bind_p
 		m_workers[i].pool = this;
 		pthread_mutex_init(&m_workers[i].mutex, NULL);
 		pthread_cond_init(&m_workers[i].hEvent, NULL);
-		pthread_create(&m_workers[i].thread_id, attr, workthread, &m_workers[i]);
+		pthread_create(&m_workers[i].thread_id, attr, tst_work, &m_workers[i]);
 		pthread_detach(m_workers[i].thread_id);	// pthread_exit(0); 시 리소스 자동 해제
 	}
 
 	// 관리 쓰레드 생성
-	pthread_create(&m_main_thread, NULL, mainthread, this); // 관리 쓰레드는 pthread_join() 으로 동기화 해서 종료할 것임
+	pthread_create(&m_main_thread, NULL, tst_main, this); // 관리 쓰레드는 pthread_join() 으로 동기화 해서 종료할 것임
 
 	if(!m_main_run) {
 		// 흐미 쓰레드 생성중 뭐가 문제 발생했다.
