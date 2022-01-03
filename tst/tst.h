@@ -250,7 +250,7 @@ namespace tst {
 		// mutex 초기화(선언과 함께=PTHREAD_MUTEX_INITIALIZER) or pthread_mutex_init(&mutex,NULL);
 		pthread_mutex_t	m_mutexConnect;		// m_connect 에 대한 동기화작업이 필요하면 사용한다
 		pthread_mutex_t	m_mutexWork;		// 워크쓰레드들 사이에 동기화가 필요한 경우 사용하기 위한 뮤텍스
-		PTST_THREAD_INFO m_workers;				// 워크쓰레드 테이블
+		PTST_THREAD_INFO	m_workers;				// 워크쓰레드 테이블
 		struct timespec m_waittime;			// 각 쓰레드 마다 스스로 깨어날 시간을 지정한다 (default 3초)
 		uint64_t m_endwaittime;				// 쓰레드풀 종료 시, 아직 실행되고 있는 워크 쓰레드의 종료를 기다리는 시간(나노초)
 		uint32_t m_size_event;				// m_events 의 크기
