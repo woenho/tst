@@ -450,7 +450,7 @@ void* tst_main(void* param)
 
 void* tst_work(void* param)
 {
-	PTHREADINFO me = (PTHREADINFO)param;
+	PTST_THREAD_INFO me = (PTST_THREAD_INFO)param;
 	int nStat;
 	struct timespec waittime;
 	struct timespec timenow;
@@ -691,7 +691,7 @@ int tstpool::create(int thread_count, const char* bind_ip, unsigned short bind_p
 	pthread_mutex_init(&m_mutexConnect, NULL);
 	pthread_mutex_init(&m_mutexWork, NULL);
 
-	m_workers = (PTHREADINFO)calloc(sizeof(THREADINFO) * m_thread_count,1);
+	m_workers = (PTST_THREAD_INFO)calloc(sizeof(TST_THREAD_INFO) * m_thread_count,1);
 	m_size_event = sizeof(struct epoll_event) * m_thread_count;
 	m_events = (struct epoll_event*)calloc(m_size_event, 1);
 

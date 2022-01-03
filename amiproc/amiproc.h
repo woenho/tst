@@ -1,0 +1,121 @@
+#ifndef _AMIPROC_H_
+#define _AMIPROC_H_
+
+#include "tst.h"
+#include "AsyncThreadPool.h"
+
+using namespace std;
+using namespace tst;
+
+typedef struct AMI_LOGIN_T {
+	char Host[32];
+	char Username[32];
+	char Secret[32];
+}AMI_LOGIN, * PAMI_LOGIN;
+
+typedef struct AMI_EVENTS_T {
+	char event[4096];					// 수신된 AMI event 를 복사해 놓는다
+	uint16_t rec_count;					// event에 수신된 레코드 건수
+	char* key[100];						// event에 수신된 레코드 중 키의 위치를 기록
+	char* value[100];					// event에 수신된 레코드 중 값의 위치를 기록
+}AMI_EVENTS, * PAMI_EVENTS;
+
+typedef ATP_STAT eventproc(AMI_EVENTS& events);
+
+typedef enum {ami_base=100} AMI_TYPE;
+typedef enum { action_none, action_requst, action_response } AMI_MODE;
+typedef void ami_callbak(PTST_SOCKET psocket);
+
+void* rm_ami_socket(PTST_USER puser);
+
+// ami_socket 구조체 멤버 user_data 에 등록된다. 별도의 ami 연결이 필요하면 별도로 관리해야한다.
+typedef struct AMI_MANAGE_T {
+	AMI_MODE mode;						// 현재 이 소켓에 ami action 의 처리단계 및 상태
+	int result;							// mode == action_response 일 때 그 결과 값 (0: 성공, 이외 값은 오류코드)
+	char msg[512];						// result 가 설정되면 그 사유를 기록해 둔다
+	ami_callbak func;					// AMI ACTION 이 끝났을 때 호출 함수
+	pthread_mutex_t	mutexAMI;			// AMI 명령을 보내기 위한 대기열
+	pthread_mutex_t	mutexResp;			// AMI명령에 대한 답변을 기다리는 대기열
+	pthread_cond_t	condResp;			// AMI명령에 대한 답변을 연동하는 시그널
+	int connected;						// AMI에 연결되었는지 확인 (0: 최초, 1: 로그인 명령 보낸 상태, 2: 로그인 된 상태)
+	uint32_t ami_waitcount;				// AMI 명령을 보내기 위하여 대기하는 대기열 수
+	uint32_t resp_waitcount;			// AMI 명령에 대한 응답대기 대기열 수로 필요하지 않으나 혹시 프로그래밍상 오류로 2개가 된다면 이를 검증해야하기에 추가함
+	uint32_t actionid;					// AMI 명령을 보내는 순번 
+
+	static PTST_USER alloc() {
+		uint32_t s_len = sizeof(TST_USER) + sizeof(struct AMI_MANAGE_T);
+		PTST_USER puser = (PTST_USER)calloc(s_len,1);
+		puser->s_len = s_len;
+		puser->type = ami_base;
+		puser->removeBuffer = (CleanFunction)rm_ami_socket;
+		((struct AMI_MANAGE_T*)puser->s)->init();
+		return puser;
+	}
+
+	void init() {
+		bzero(this, sizeof(*this));
+		pthread_mutex_init(&mutexAMI, NULL);
+		pthread_mutex_init(&mutexResp, NULL);
+		pthread_cond_init(&condResp, NULL);
+	}
+	void destroy() {
+		pthread_mutex_destroy(&mutexAMI);
+		pthread_mutex_destroy(&mutexResp);
+		pthread_cond_destroy(&condResp);
+	}
+	int ami_lock() {
+		ami_waitcount++;
+		return pthread_mutex_lock(&mutexAMI);
+	}
+	int ami_unlock() {
+		ami_waitcount--;
+		return pthread_mutex_unlock(&mutexAMI);
+	}
+	int resp_lock() {
+		resp_waitcount++;
+		return pthread_mutex_lock(&mutexResp);
+	}
+	int resp_unlock() {
+		resp_waitcount--;
+		return pthread_mutex_unlock(&mutexResp);
+	}
+
+	bool ami_sync(char* action);
+	void ami_async(char* action);
+
+}AMI_MANAGE, *PAMI_MANAGE;
+
+typedef struct http_header {
+	const char* name;  /* HTTP header name */
+	const char* value; /* HTTP header value */
+}HTTP_HEADER;
+
+#define HTTP_MAX_HEADERS	30
+
+typedef struct http_request_info {
+	const char* request_method;		/* "GET", "POST", etc */
+	const char* request_uri;		/* URL-decoded URI (absolute or relative,* as in the request) */
+	const char* http_version;		/* E.g. "1.0", "1.1" */
+	const char* query_string;		/* URL part after '?', not including '?', or NULL */
+	long long content_length;	/* Length (in bytes) of the request body, can be -1 if no length was given. */
+	int remote_port;			/* Port at client side */
+	int server_port;			/* Port at server side (one of the listening ports) */
+	void* user_data;			/* User data pointer passed to mg_start() */
+	void* conn_data;			/* Connection-specific user data */
+	int num_headers;			/* Number of HTTP headers */
+	HTTP_HEADER http_headers[HTTP_MAX_HEADERS]; /* Allocate maximum headers */
+}REQUEST_INFO, *PREQUEST_INFO;
+
+extern int g_exit;
+extern tstpool server;				// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
+extern PTST_SOCKET ami_socket;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
+extern map<const char*, void*> g_process;
+
+int parse_amievent(AMI_EVENTS& events);
+const char* get_amivalue(AMI_EVENTS& events, const char* key);
+
+TST_STAT ami_event(PTST_SOCKET psocket);
+TST_STAT http(PTST_SOCKET psocket);
+
+
+#endif
