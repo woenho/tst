@@ -112,7 +112,7 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 }
 
 void AMI_MANAGE::ami_async(char* action) {
-	if (ami_socket->sd < 1)
+	if (!ami_socket || ami_socket->sd < 1)
 		return;
 
 	ami_lock();
@@ -122,7 +122,7 @@ void AMI_MANAGE::ami_async(char* action) {
 		"ActionID: %d\n"
 		"\n"
 		, action
-		, ++((PAMI_MANAGE)ami_socket->user_data->s)->actionid
+		, ++actionid
 	);
 	TRACE("ami action async ---------\n%s", sdata.s);
 	write(ami_socket->sd, sdata.s, sdata.req_len);
