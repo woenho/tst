@@ -141,6 +141,7 @@
   <ItemGroup>
     <None Include=".editorconfig" />
     <None Include="Makefile" />
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="amiaction.cpp" />

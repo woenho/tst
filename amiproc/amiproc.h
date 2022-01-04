@@ -14,6 +14,7 @@ typedef struct AMI_LOGIN_T {
 }AMI_LOGIN, * PAMI_LOGIN;
 
 typedef struct AMI_EVENTS_T {
+	int nThreadNo;						// atp워크쓰레드 고유일련번호
 	char event[4096];					// 수신된 AMI event 를 복사해 놓는다
 	uint16_t rec_count;					// event에 수신된 레코드 건수
 	char* key[100];						// event에 수신된 레코드 중 키의 위치를 기록
@@ -28,11 +29,16 @@ typedef void ami_callbak(PTST_SOCKET psocket);
 
 void* rm_ami_socket(PTST_USER puser);
 
+typedef struct AMI_RESPONSE_T {
+	int result;							// mode == action_response 일 때 그 결과 값 (0: 성공, 이외 값은 오류코드)
+	char msg[128];						// result 가 설정되면 그 사유를 기록해 둔다
+}AMI_RESPONSE, *PAMI_RESPONSE;
+
 // ami_socket 구조체 멤버 user_data 에 등록된다. 별도의 ami 연결이 필요하면 별도로 관리해야한다.
 typedef struct AMI_MANAGE_T {
 	AMI_MODE mode;						// 현재 이 소켓에 ami action 의 처리단계 및 상태
 	int result;							// mode == action_response 일 때 그 결과 값 (0: 성공, 이외 값은 오류코드)
-	char msg[512];						// result 가 설정되면 그 사유를 기록해 둔다
+	char msg[128];						// result 가 설정되면 그 사유를 기록해 둔다
 	ami_callbak func;					// AMI ACTION 이 끝났을 때 호출 함수
 	pthread_mutex_t	mutexAMI;			// AMI 명령을 보내기 위한 대기열
 	pthread_mutex_t	mutexResp;			// AMI명령에 대한 답변을 기다리는 대기열
@@ -80,7 +86,7 @@ typedef struct AMI_MANAGE_T {
 		return pthread_mutex_unlock(&mutexResp);
 	}
 
-	bool ami_sync(char* action);
+	PAMI_RESPONSE ami_sync(char* action);
 	void ami_async(char* action);
 
 }AMI_MANAGE, *PAMI_MANAGE;

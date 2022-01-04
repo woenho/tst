@@ -51,7 +51,7 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 	ami_socket->func = ami_event;
 	ami_socket->user_data = AMI_MANAGE::alloc();
 
-	AMI_MANAGE& manage = *(PAMI_MANAGE)ami_socket->user_data;	
+	AMI_MANAGE& manage = *(PAMI_MANAGE)ami_socket->user_data->s;	
 	TST_DATA& rdata = *ami_socket->recv;
 	TST_DATA& sdata = *ami_socket->send;
 	int connected = 0;
@@ -61,7 +61,7 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 		ioctl(sd, SIOCINQ, &rdata.checked_len);
 		if (rdata.checked_len) {
 			rdata.result_len += read(sd, rdata.s+ rdata.result_len, rdata.checked_len);
-			TRACE("recv:%s:", rdata.s);
+			TRACE("recv:\n%s", rdata.s);
 		}
 
 		if (rdata.result_len < 22) {
@@ -144,10 +144,9 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 	ev.data.fd = sd;
 	epoll_ctl(server.m_epfd, EPOLL_CTL_ADD, ev.data.fd, &ev);
 
-	TRACE("--- ami in data check(%d)\n", ami_socket->recv->checked_len);
-
 	// 혹시 벌써 들어온 문자가 있다면, 이벤트 타야한다... 이벤트 확인시키자.
 	ioctl(sd, SIOCINQ, &ami_socket->recv->checked_len);
+	TRACE("--- ami in data check(%d)\n", ami_socket->recv->checked_len);
 
 	return stat_suspend;
 }
@@ -157,7 +156,7 @@ PAMI_MANAGE amiDeviceStatus(PTST_SOCKET psocket, const char* device)
 {
 	
 
-	return (PAMI_MANAGE)psocket->user_data;
+	return (PAMI_MANAGE)psocket->user_data->s;
 }
 
 

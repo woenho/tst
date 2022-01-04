@@ -60,40 +60,72 @@ int parse_amievent(AMI_EVENTS& events) {
 	return events.rec_count;
 }
 
-bool AMI_MANAGE::ami_sync(char* action)
+PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 {
-	if (ami_socket->sd < 1)
-		return false;
+	PAMI_RESPONSE resp = new AMI_RESPONSE;
+
+	if (ami_socket->sd < 1) {
+		resp->result = -99;
+		strcpy(resp->msg, "AMI서버에 연결되지 않음");
+		return resp;
+	}
 
 	TST_DATA& sdata = *ami_socket->send;
+	ami_lock();
+	resp_lock();
 
 	sdata.req_len = sprintf(sdata.s,
 		"%s"
 		"ActionID: %d\n"
 		"\n"
 		, action
-		, ++((PAMI_MANAGE)ami_socket->user_data)->actionid
+		, ++actionid
 	);
-	printf("%s", sdata.s);
-	
+	TRACE("ami action sync ---------\n%s", sdata.s);
+	struct timespec waittime;
+	clock_gettime(CLOCK_REALTIME, &waittime);	// NTP영향받아야 함
+	waittime.tv_sec += 5;
+	waittime.tv_nsec = 0;
 
-	return true;
+	mode = action_requst;
+	write(ami_socket->sd, sdata.s, sdata.req_len);
+	int rc = pthread_cond_timedwait(&condResp, &mutexResp, &waittime);
+	if (!rc) {
+		// 정상처리
+		resp->result = result;
+		strcpy(resp->msg, msg);
+	}
+	else {
+		if (rc == ETIMEDOUT) {
+			//printf("ami action setvar error... 서버가 응답을 하지 않음\n");
+			resp->result = -8;
+			strcpy(resp->msg, "ami action error... 서버가 응답을 하지 않음");
+		} else {
+			resp->result = errno;
+			snprintf(resp->msg, sizeof(resp->msg)-1, "ami action error... %s",strerror(errno));
+		}
+	}
+
+	resp_unlock();
+	ami_unlock();
+
+	return resp;
 }
 
 void AMI_MANAGE::ami_async(char* action) {
 	if (ami_socket->sd < 1)
 		return;
 
+	ami_lock();
 	TST_DATA& sdata = *ami_socket->send;
 	sdata.req_len = sprintf(sdata.s,
 		"%s"
 		"ActionID: %d\n"
 		"\n"
 		, action
-		, ++((PAMI_MANAGE)ami_socket->user_data)->actionid
+		, ++((PAMI_MANAGE)ami_socket->user_data->s)->actionid
 	);
-	printf("%s", sdata.s);
-	ami_lock();
+	TRACE("ami action async ---------\n%s", sdata.s);
 	write(ami_socket->sd, sdata.s, sdata.req_len);
 	ami_unlock();
 }
@@ -157,8 +189,17 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		parse_amievent(events);
 
 		// event or response data processing
-		if (!strncmp(events.event, "Response:", 9)) {
-			
+		if (!strncmp(events.key[0], "Response", 8)) {
+#if defined(DEBUG)
+			int i, len = 0;
+			char msg[2048];
+			len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
+			for (i = 0; i < events.rec_count; i++) {
+				len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
+			}
+			printf("%s\n", msg);
+#endif
+				
 			if (manage.resp_waitcount && manage.mode == action_requst) {
 				manage.resp_lock();
 
@@ -195,11 +236,13 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		}
 
 #if 0
-		int i;
+		int i, len = 0;
+		char msg[2048];
+		len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
 		for (i = 0; i < events.rec_count; i++) {
-			printf("%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
+			len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
 		}
-		printf("\n");	
+		printf("%s\n", msg);
 #endif
 
 		// 이벤트 처리
@@ -243,9 +286,10 @@ TST_STAT my_disconnected(PTST_SOCKET psocket) {
 ATP_STAT atpfunc(PATP_DATA atpdata)
 {
 	ATP_STAT next = stat_suspend;
-	if (atpdata->func)
-		next = atpdata->func(atpdata);
 
+	if (atpdata->func) {
+		next = atpdata->func(atpdata);
+	}
 	return next;
 }
 int main(int argc, char* argv[])
@@ -272,6 +316,7 @@ int main(int argc, char* argv[])
 	g_process["Hangup"] = (void*)event_hangup;
 	g_process["DialBegin"] = (void*)event_dialbegin;
 	g_process["DialEnd"] = (void*)event_dialend;
+	// g_process["VarSet"] = (void*)event_varset;
 
 	map<const char*, void*>::iterator it;
 	for (it = g_process.begin(); it != g_process.end(); it++) {

@@ -10,6 +10,7 @@ ATP_STAT process_events(PATP_DATA atp_data);
 ATP_STAT event_hangup(AMI_EVENTS& events);
 ATP_STAT event_dialbegin(AMI_EVENTS& events);
 ATP_STAT event_dialend(AMI_EVENTS& events);
+ATP_STAT event_varset(AMI_EVENTS& events);
 
 
 #endif
