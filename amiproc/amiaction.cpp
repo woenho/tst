@@ -152,11 +152,13 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 }
 
 
-PAMI_MANAGE amiDeviceStatus(PTST_SOCKET psocket, const char* device)
+PAMI_RESPONSE amiDeviceStatus(const char* device)
 {
-	
+	PAMI_RESPONSE resp = new AMI_RESPONSE;
 
-	return (PAMI_MANAGE)psocket->user_data->s;
+
+
+	return resp;
 }
 
 

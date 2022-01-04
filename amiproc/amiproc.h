@@ -30,20 +30,20 @@ typedef void ami_callbak(PTST_SOCKET psocket);
 void* rm_ami_socket(PTST_USER puser);
 
 typedef struct AMI_RESPONSE_T {
+	AMI_MODE mode;						// 현재 이 소켓에 ami action 의 처리단계 및 상태
 	int result;							// mode == action_response 일 때 그 결과 값 (0: 성공, 이외 값은 오류코드)
 	char msg[128];						// result 가 설정되면 그 사유를 기록해 둔다
+	AMI_EVENTS responses;				// result 결과전문을 저장한다.
+	AMI_RESPONSE_T() { bzero(this, sizeof(*this)); }
 }AMI_RESPONSE, *PAMI_RESPONSE;
 
 // ami_socket 구조체 멤버 user_data 에 등록된다. 별도의 ami 연결이 필요하면 별도로 관리해야한다.
 typedef struct AMI_MANAGE_T {
-	AMI_MODE mode;						// 현재 이 소켓에 ami action 의 처리단계 및 상태
-	int result;							// mode == action_response 일 때 그 결과 값 (0: 성공, 이외 값은 오류코드)
-	char msg[128];						// result 가 설정되면 그 사유를 기록해 둔다
+	PAMI_RESPONSE pResp;					// ami action의 결과값을 받고 싶으면 설정(AMI_MANAGE::ami_sync()에서 자동)한다. 사용자 프로그램애서는 절대 사용 금지
 	ami_callbak func;					// AMI ACTION 이 끝났을 때 호출 함수
 	pthread_mutex_t	mutexAMI;			// AMI 명령을 보내기 위한 대기열
 	pthread_mutex_t	mutexResp;			// AMI명령에 대한 답변을 기다리는 대기열
 	pthread_cond_t	condResp;			// AMI명령에 대한 답변을 연동하는 시그널
-	int connected;						// AMI에 연결되었는지 확인 (0: 최초, 1: 로그인 명령 보낸 상태, 2: 로그인 된 상태)
 	uint32_t ami_waitcount;				// AMI 명령을 보내기 위하여 대기하는 대기열 수
 	uint32_t resp_waitcount;			// AMI 명령에 대한 응답대기 대기열 수로 필요하지 않으나 혹시 프로그래밍상 오류로 2개가 된다면 이를 검증해야하기에 추가함
 	uint32_t actionid;					// AMI 명령을 보내는 순번 

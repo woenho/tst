@@ -62,12 +62,12 @@ int parse_amievent(AMI_EVENTS& events) {
 
 PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 {
-	PAMI_RESPONSE resp = new AMI_RESPONSE;
+	PAMI_RESPONSE pResponse = new AMI_RESPONSE;
 
-	if (ami_socket->sd < 1) {
-		resp->result = -99;
-		strcpy(resp->msg, "AMI서버에 연결되지 않음");
-		return resp;
+	if (!ami_socket || ami_socket->sd < 1) {
+		pResponse->result = -99;
+		strcpy(pResponse->msg, "AMI서버에 연결되지 않음");
+		return pResponse;
 	}
 
 	TST_DATA& sdata = *ami_socket->send;
@@ -86,30 +86,29 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 	clock_gettime(CLOCK_REALTIME, &waittime);	// NTP영향받아야 함
 	waittime.tv_sec += 5;
 	waittime.tv_nsec = 0;
-
-	mode = action_requst;
+	
+	pResponse->mode = action_requst;
+	pResp = pResponse;
 	write(ami_socket->sd, sdata.s, sdata.req_len);
 	int rc = pthread_cond_timedwait(&condResp, &mutexResp, &waittime);
 	if (!rc) {
 		// 정상처리
-		resp->result = result;
-		strcpy(resp->msg, msg);
 	}
 	else {
 		if (rc == ETIMEDOUT) {
 			//printf("ami action setvar error... 서버가 응답을 하지 않음\n");
-			resp->result = -8;
-			strcpy(resp->msg, "ami action error... 서버가 응답을 하지 않음");
+			pResponse->result = -8;
+			strcpy(pResponse->msg, "ami action error... 서버가 응답을 하지 않음");
 		} else {
-			resp->result = errno;
-			snprintf(resp->msg, sizeof(resp->msg)-1, "ami action error... %s",strerror(errno));
+			pResponse->result = errno;
+			snprintf(pResponse->msg, sizeof(pResponse->msg)-1, "ami action error... %s",strerror(errno));
 		}
 	}
 
 	resp_unlock();
 	ami_unlock();
 
-	return resp;
+	return pResponse;
 }
 
 void AMI_MANAGE::ami_async(char* action) {
@@ -180,60 +179,57 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		rdata.s[rdata.result_len] = '\0';
 		// TRACE("%s", rdata.s);
 
-		// parsing
-		PATP_DATA atpdata = atp_alloc(sizeof(AMI_EVENTS));
-		AMI_EVENTS& events = *(PAMI_EVENTS)&atpdata->s;
-		strncpy(events.event, rdata.s, rdata.result_len);
-		rdata.reset_data();
-
-		parse_amievent(events);
-
 		// event or response data processing
-		if (!strncmp(events.key[0], "Response", 8)) {
-#if defined(DEBUG)
-			int i, len = 0;
-			char msg[2048];
-			len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-			for (i = 0; i < events.rec_count; i++) {
-				len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-			}
-			printf("%s\n", msg);
-#endif
-				
-			if (manage.resp_waitcount && manage.mode == action_requst) {
+		if (manage.pResp && !strncmp(rdata.s, "Response:", 9)) {
+			if (manage.resp_waitcount && manage.pResp->mode == action_requst) {
 				manage.resp_lock();
+				AMI_RESPONSE& resp = *manage.pResp;
 
-				uint32_t curr_id = atoi(get_amivalue(events, "ActionID")); // response의 action id
+				strncpy(resp.responses.event, rdata.s, rdata.result_len);
+				parse_amievent(resp.responses);
+				rdata.reset_data();
+
+
+				uint32_t curr_id = atoi(get_amivalue(resp.responses, "ActionID")); // response의 action id
 
 				if (curr_id < manage.actionid) {
 					// 이전 액션의 결과면 패스... 다음 것을 기다려야 한다
-				} else if (curr_id > manage.actionid) {
+					manage.resp_unlock();
+					return tst_suspend;
+				}
+				else if (curr_id > manage.actionid) {
 					// 이후 액션의 결과면 오류 처리
-					manage.mode = action_response;
-					manage.result = -2;
-					sprintf(manage.msg, "action id is past...");
-				} else {
-					manage.mode = action_response;
-					if (!strncmp(events.value[0], "Success", 7)) {
+					resp.mode = action_response;
+					resp.result = -2;
+					sprintf(resp.msg, "action id is past...");
+					bzero(&resp.responses, sizeof(resp.responses));
+				}
+				else {
+					resp.mode = action_response;
+					if (!strncmp(resp.responses.value[0], "Success", 7)) {
 						// 응답 성공
-						manage.result = 0;
-						manage.connected = 2;
+						resp.result = 0;
 					}
 					else {
 						// 응답실패 
-						manage.result = -1;
+						resp.result = -1;
 					}
 					// set "Message: Authentication accepted" to manage.msg
-					strncpy(manage.msg, get_amivalue(events, "Message"), sizeof(manage.msg)-1);
+					strncpy(resp.msg, get_amivalue(resp.responses, "Message"), sizeof(resp.msg) - 1);
 				}
-
+				manage.pResp = NULL;
 				// 싱크로 동작하는 ami sction 요청이 있다. 통보해 주자
 				pthread_cond_signal(&manage.condResp);
 				manage.resp_unlock();
 			}
-			free(atpdata);
 			return tst_suspend;
 		}
+
+		PATP_DATA atpdata = atp_alloc(sizeof(AMI_EVENTS));
+		AMI_EVENTS& events = *(PAMI_EVENTS)&atpdata->s;
+		strncpy(events.event, rdata.s, rdata.result_len);
+		parse_amievent(events);
+		rdata.reset_data();
 
 #if 0
 		int i, len = 0;
@@ -244,6 +240,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		}
 		printf("%s\n", msg);
 #endif
+
 
 		// 이벤트 처리
 		atpdata->func = process_events;
