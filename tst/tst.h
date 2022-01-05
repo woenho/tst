@@ -85,10 +85,11 @@ namespace tst {
 	// TST_DATA::s 가 가변이라 new 사용하지 말고 malloc 해서 사용하시라
 	// ----------------------------------------------
 	typedef struct TST_DATA_T {
-		void reset_data() { req_len = result_len = 0; bzero(s, s_len); }
+		void reset_data() { req_len = req_pos = com_len = 0; bzero(s, s_len); }
+		uint32_t req_pos;			// req_len 설정시 그 시작점이 되는 위치 (현재 버퍼위치==> req_pos + com_len )
 		uint32_t req_len;			// 수신버퍼라면 수신해야할 메시지의 크기, 발신할 결우 발신할 메시지의 크기를 설정하면 이후 result_len 이 req_len 과 같아질때까지 쓰레드가 알아서 처리한다
-		uint32_t result_len;		// 수신버퍼라면 수신이 완료된 바이트 수, 발신버퍼라면 발신완료된 바이트 수로 사용자가 잘 설정하여 사용하도록 한다
-									// req_len==0 이거나 req_len==result_len 가 되면 사용자함수(THREADINFO::tst_func)를 호출한다.
+		uint32_t com_len;			// 수신버퍼라면 수신이 완료된 바이트 수, 발신버퍼라면 발신완료된 바이트 수로 사용자가 잘 설정하여 사용하도록 한다
+									// req_len==0 이거나 req_len==com_len 가 되면 사용자함수(THREADINFO::tst_func)를 호출한다.
 		uint32_t checked_len;		// 수신버퍼라면 수신해야될 도작된 바이트 수, 발신버퍼라면 발신해야할 남은 바이트수
 		struct timespec trans_time;	// NTP 기준 마지막 송수신 시각
 		uint32_t s_len;				// 송수신버퍼의 크기정보

@@ -516,11 +516,11 @@ void* tst_work(void* param)
 				// 확인 후 사용자 함수를 호출 하여면 next = tst_run을 설정한다
 				data = socket->recv;
 				if (data && data->req_len) {
-					if (data->result_len >= data->req_len) {
+					if (data->com_len >= data->req_len) {
 						next = tst_run;
 					} else {
 #ifdef DEBUGTRACE
-						char* p = &data->s[data->result_len];
+						char* p = &data->s[data->req_pos + data->com_len];
 #endif
 						// 메인쓰레드 체크 이후 추가로 도착한 내역이 있을 수 있다...
 						nStat = ioctl(socket->sd, SIOCINQ, &data->checked_len);
@@ -533,13 +533,17 @@ void* tst_work(void* param)
 								data->result_len += read(socket->sd, &data->s[data->result_len], 1);
 							}
 #else
-							if (data->checked_len > (data->req_len - data->result_len))
-								data->checked_len = (data->req_len - data->result_len); // 나머지는 담에 읽어라, 다음 메시지다
-							data->result_len += read(socket->sd, &data->s[data->result_len], data->checked_len);
+							if (data->checked_len > (data->req_len - data->com_len))
+								data->checked_len = (data->req_len - data->com_len); // 나머지는 담에 읽어라, 다음 메시지다
+							data->com_len += read(socket->sd, data->s + data->req_pos + data->com_len, data->checked_len);
 #endif
+							if (data->com_len >= data->req_len) {
+								data->checked_len = 0;
+								next = tst_run;
+							}
 						}
 						clock_gettime(CLOCK_REALTIME, &data->trans_time);
-						TRACE("tst workthread auto read from(sd:%d):%s:\n", socket->sd, p);
+						TRACE("tst workthread auto read from(sd:%d) req_len=%d com_len=%d:%s:\n", socket->sd, data->req_len, data->com_len, p);
 					}
 				} else {
 					next = tst_run;
@@ -552,14 +556,16 @@ void* tst_work(void* param)
 					// 메인쓰레드 체크 이후 데이타가 발신 되었을 수 있나????
 					// nStat = ioctl(socket->sd, SIOCOUTQ, &data->checked_len);
 
-					if (data->result_len >= data->req_len) {
+					if (data->com_len >= data->req_len) {
 						next = tst_run;
 					} else {
-						TRACE("tst workthread auto send to(sd:%d):%s:\n", socket->sd, &data->s[data->result_len]);
-						data->result_len += write(socket->sd, &data->s[data->result_len], data->req_len - data->result_len);
+						TRACE("tst workthread auto send to(sd:%d):%s:\n", socket->sd, &data->s[data->req_pos + data->com_len]);
+						data->com_len += write(socket->sd, data->s + data->req_pos + data->com_len, data->req_len - data->com_len);
 						clock_gettime(CLOCK_REALTIME, &data->trans_time);
-						if (data->result_len < data->req_len)
+						if (data->com_len < data->req_len)
 							next = tst_send; // 다 보내지 못했다면 send 버퍼가 꽊찼다. 버퍼가 비워지면 다시 EPOLLOUT 이벤트를 발생시켜라.
+						else
+							next = tst_run;	// 다 보냈다. 다 보냈다는 것을 사용자지정함수에 전달하자
 					}
 				} else {
 					next = tst_run;

@@ -1,5 +1,6 @@
 
 #include "amiaction.h"
+#include "http.h"
 #include "processevents.h"
 
 
@@ -150,7 +151,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 	AMI_MANAGE& manage = *(PAMI_MANAGE)udata.s;
 
 	if (psocket->events & EPOLLIN) {
-		uint remain = rdata.s_len - rdata.result_len -1; // -1은 마지막문자로 널스트링을 넣기 위하여
+		uint remain = rdata.s_len - rdata.com_len - 1; // 현재 남은 공간, -1은 마지막문자로 널스트링을 넣기 위하여
 		if (remain > rdata.checked_len)
 			remain = rdata.checked_len;
 
@@ -158,25 +159,25 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 
 		// login 외의 모든 메시지는 "\r\n" 이 두 개로 구분된다
 		do {
-			rdata.result_len += read(psocket->sd, rdata.s + rdata.result_len, 1);
+			rdata.com_len += read(psocket->sd, rdata.s + rdata.com_len, 1);
 		} while (--remain && (
-			rdata.result_len < 4
-			|| rdata.s[rdata.result_len - 4] != '\r'
-			|| rdata.s[rdata.result_len - 3] != '\n'
-			|| rdata.s[rdata.result_len - 2] != '\r'
-			|| rdata.s[rdata.result_len - 1] != '\n'
+			rdata.com_len < 4
+			|| rdata.s[rdata.com_len - 4] != '\r'
+			|| rdata.s[rdata.com_len - 3] != '\n'
+			|| rdata.s[rdata.com_len - 2] != '\r'
+			|| rdata.s[rdata.com_len - 1] != '\n'
 			)
 			);
 
 
-		if (rdata.s[rdata.result_len - 4] != '\r'
-			|| rdata.s[rdata.result_len - 3] != '\n'
-			|| rdata.s[rdata.result_len - 2] != '\r'
-			|| rdata.s[rdata.result_len - 1] != '\n') {
+		if (rdata.s[rdata.com_len - 4] != '\r'
+			|| rdata.s[rdata.com_len - 3] != '\n'
+			|| rdata.s[rdata.com_len - 2] != '\r'
+			|| rdata.s[rdata.com_len - 1] != '\n') {
 			return tst_suspend;
 		}
 
-		rdata.s[rdata.result_len] = '\0';
+		rdata.s[rdata.com_len] = '\0';
 		// TRACE("%s", rdata.s);
 
 		// event or response data processing
@@ -185,7 +186,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				manage.resp_lock();
 				AMI_RESPONSE& resp = *manage.pResp;
 
-				strncpy(resp.responses.event, rdata.s, rdata.result_len);
+				strncpy(resp.responses.event, rdata.s, rdata.com_len);
 				parse_amievent(resp.responses);
 				rdata.reset_data();
 
@@ -227,7 +228,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 
 		PATP_DATA atpdata = atp_alloc(sizeof(AMI_EVENTS));
 		AMI_EVENTS& events = *(PAMI_EVENTS)&atpdata->s;
-		strncpy(events.event, rdata.s, rdata.result_len);
+		strncpy(events.event, rdata.s, rdata.com_len);
 		parse_amievent(events);
 		rdata.reset_data();
 
@@ -245,7 +246,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		// 이벤트 처리
 		atpdata->func = process_events;
 		atp_addQueue(atpdata);
-		TRACE("REQUEST ami events(%s)...\n", events.value[0]);
+		// TRACE("REQUEST ami events(%s)...\n", events.value[0]);
 
 
 	} else if (psocket->events & EPOLLOUT) {
@@ -289,6 +290,7 @@ ATP_STAT atpfunc(PATP_DATA atpdata)
 	}
 	return next;
 }
+
 int main(int argc, char* argv[])
 {
 	g_exit = 0;
@@ -300,7 +302,7 @@ int main(int argc, char* argv[])
 
 	server.setEventDisonnected(my_disconnected);
 
-	if (!server.create(5, "0.0.0.0", 1234, http, 4096, 4096)) {
+	if (!server.create(5, "0.0.0.0", 4060, http, 4096, 4096)) {
 		printf("---쓰레드풀이 기동 되지 못했다....\n");
 		return 0;
 	}
@@ -318,6 +320,13 @@ int main(int argc, char* argv[])
 	map<const char*, void*>::iterator it;
 	for (it = g_process.begin(); it != g_process.end(); it++) {
 		printf(":%s: event func address -> %lX\n", it->first, ADDRESS(it->second));
+	}
+
+	g_route.clear();
+	g_route["/dtmf"] = (void*)http_dtmf;
+	g_route["/transfer"] = (void*)http_transfer;
+	for (it = g_route.begin(); it != g_route.end(); it++) {
+		printf(":%s: http route func address -> %lX\n", it->first, ADDRESS(it->second));
 	}
 
 	// -------------------------------------------------------------------------------------

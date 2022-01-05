@@ -91,27 +91,6 @@ typedef struct AMI_MANAGE_T {
 
 }AMI_MANAGE, *PAMI_MANAGE;
 
-typedef struct http_header {
-	const char* name;  /* HTTP header name */
-	const char* value; /* HTTP header value */
-}HTTP_HEADER;
-
-#define HTTP_MAX_HEADERS	30
-
-typedef struct http_request_info {
-	const char* request_method;		/* "GET", "POST", etc */
-	const char* request_uri;		/* URL-decoded URI (absolute or relative,* as in the request) */
-	const char* http_version;		/* E.g. "1.0", "1.1" */
-	const char* query_string;		/* URL part after '?', not including '?', or NULL */
-	long long content_length;	/* Length (in bytes) of the request body, can be -1 if no length was given. */
-	int remote_port;			/* Port at client side */
-	int server_port;			/* Port at server side (one of the listening ports) */
-	void* user_data;			/* User data pointer passed to mg_start() */
-	void* conn_data;			/* Connection-specific user data */
-	int num_headers;			/* Number of HTTP headers */
-	HTTP_HEADER http_headers[HTTP_MAX_HEADERS]; /* Allocate maximum headers */
-}REQUEST_INFO, *PREQUEST_INFO;
-
 extern int g_exit;
 extern tstpool server;				// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
 extern PTST_SOCKET ami_socket;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
@@ -122,6 +101,8 @@ const char* get_amivalue(AMI_EVENTS& events, const char* key);
 
 TST_STAT ami_event(PTST_SOCKET psocket);
 TST_STAT http(PTST_SOCKET psocket);
+TST_STAT my_disconnected(PTST_SOCKET psocket);
+ATP_STAT atpfunc(PATP_DATA atpdata);
 
 
 #endif

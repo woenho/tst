@@ -28,6 +28,8 @@ send 구조체에 보낼 데이타를 설정 중에 해당 소켓이 닫히면 �
 
 현재 작업중인 소켓의 클라이언트에 메시지를 보내고 싶다면 두 가지 방법이 있다.
 직접 write() 를 호출하는 방법과 socket->send->req_len 에 적절한 값을 설정하는것이다. 굳이 need_send()를 호출할 필요가 없다.
+ex) socket->send->req_len=10, socket->send->req_pos=30, socket->send->com_len=0; 의 의미: socket->send->s 로 부터 30번째 자리부터 10바이트 송수신 하라는 뜻 완료되면 com_len에 10을 넣어준다
+EPOLLOUT 시에 위의 값을 설정하고 tst_send 를 리턴하면 보내주고, EPOLLIN 시에 tst_suspend 를 리턴하면 받아준다
 socket->send->req_len 에 적절한 값을 설정하고 tst_send를 리턴하면 워크쓰레드가 알아서 보내준다
 직접 write()를 한 경우 socket->send->req_len=0 하고 tst_suspend를 리턴한다.
 tst_send를 리턴하면 tcp send버퍼가 꽉차지 않는 한 바로 EPOLLOUT 이벤트가 발생하므로 무한루프 탈 수 있다.

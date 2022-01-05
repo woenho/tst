@@ -60,11 +60,11 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 	while (connected < 2) {
 		ioctl(sd, SIOCINQ, &rdata.checked_len);
 		if (rdata.checked_len) {
-			rdata.result_len += read(sd, rdata.s+ rdata.result_len, rdata.checked_len);
+			rdata.com_len += read(sd, rdata.s + rdata.com_len, rdata.checked_len);
 			TRACE("recv:\n%s", rdata.s);
 		}
 
-		if (rdata.result_len < 22) {
+		if (rdata.com_len < 22) {
 			if (!--retry) {
 				printf("연결된 소켓은 Asterisk AMI 가 아니다!(retry over)\n");
 				delete ami_socket;
@@ -92,8 +92,8 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 				, login.Secret
 				, ++manage.actionid
 			);
-			sdata.result_len = write(sd, sdata.s, sdata.req_len);
-			if (sdata.result_len != sdata.req_len) {
+			sdata.com_len = write(sd, sdata.s, sdata.req_len);
+			if (sdata.com_len != sdata.req_len) {
 				printf("연결된 AMI소켓에 쓰기 실패\n");
 				delete ami_socket;
 				ami_socket = NULL;
@@ -106,9 +106,9 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 		}
 
 		// 연결되었는지 확인
-		if (rdata.s[rdata.result_len - 2] == '\r' && rdata.s[rdata.result_len - 1] == '\n') {
+		if (rdata.s[rdata.com_len - 2] == '\r' && rdata.s[rdata.com_len - 1] == '\n') {
 			AMI_EVENTS events;
-			strncpy(events.event, rdata.s, rdata.result_len);
+			strncpy(events.event, rdata.s, rdata.com_len);
 			rdata.reset_data();
 
 			parse_amievent(events);

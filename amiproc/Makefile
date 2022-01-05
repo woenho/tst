@@ -9,6 +9,7 @@ TARGET = amiproc
 SRCS =  http.cpp \
 		processevents.cpp \
 		amiaction.cpp \
+		routes.cpp \
 		amiproc.cpp
 OBJS = $(SRCS:.cpp=.o)
 

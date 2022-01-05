@@ -148,6 +148,7 @@
     <ClCompile Include="amiproc.cpp" />
     <ClCompile Include="http.cpp" />
     <ClCompile Include="processevents.cpp" />
+    <ClCompile Include="routes.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="amiaction.h" />
