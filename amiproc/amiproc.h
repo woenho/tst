@@ -86,12 +86,11 @@ typedef struct AMI_MANAGE_T {
 		return pthread_mutex_unlock(&mutexResp);
 	}
 
-	PAMI_RESPONSE ami_sync(char* action);
+	PAMI_RESPONSE ami_sync(char* action, bool logprint = true);
 	void ami_async(char* action);
 
 }AMI_MANAGE, *PAMI_MANAGE;
 
-extern int g_exit;
 extern tstpool server;				// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
 extern PTST_SOCKET ami_socket;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
 extern map<const char*, void*> g_process;

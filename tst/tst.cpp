@@ -7,6 +7,7 @@
 */
 
 #include "tst.h"
+#include<syslog.h>
 
 using namespace std;
 using namespace tst;
@@ -45,7 +46,9 @@ int	tstpool::tcp_create(const char* ip, u_short port_no)
 
 	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
-		printf("server socket create error port = %d, errno = %d\n", port_no, errno);
+		fprintf(stderr, "server socket create error port = %d, errno=%d\n", port_no, errno);
+		fflush(stderr);
+		syslog(LOG_INFO, "tstpool --- server socket create error port=%d, errno=%d", port_no, errno);
 		return -1;
 	}
 
@@ -63,12 +66,14 @@ int	tstpool::tcp_create(const char* ip, u_short port_no)
 			}
 			else if (errno == EADDRINUSE)
 			{
+				syslog(LOG_INFO, "tstpool bind error. 사용중인 port(%d)임, retry count(%d)", port_no, retry);
 				fprintf(stderr, "tstpool bind error. 사용중인 port(%d)임, retry count(%d)\n", port_no, retry);
 				optval = 1;
 				setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&optval, sizeof(optval));
 			}
 			else
 			{
+				syslog(LOG_INFO, "tstpool bind error. ip=%s, port=%d, errno=%d", inet_ntoa(addr_in.sin_addr), port_no, errno);
 				fprintf(stderr, "tstpool bind error. ip=%s, port=%d, errno=%d\n", inet_ntoa(addr_in.sin_addr), port_no, errno);
 			}
 			fflush(stderr);
@@ -265,6 +270,10 @@ void* tst_main(void* param)
 						} else {
 							pool->closesocket(sd);
 						}
+					} else {
+						syslog(LOG_INFO, "tstpool accept()error, errno=%d, msg:%s", errno, strerror(errno));
+						nCheckCount--;
+						continue;
 					}
 					// epoll에 서버소켓 수정 등록
 					memset(&ev, 0x00, sizeof(ev));

@@ -4,8 +4,6 @@
 #include "processevents.h"
 
 
-int g_exit = 0;
-
 tstpool server;						// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
 PTST_SOCKET ami_socket = NULL;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
 map<const char*, void*> g_process;	// ami event 중 처리하고자 하는 이벹에 대한 함수포인터를 등록해 둔다
@@ -61,7 +59,7 @@ int parse_amievent(AMI_EVENTS& events) {
 	return events.rec_count;
 }
 
-PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
+PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 {
 	PAMI_RESPONSE pResponse = new AMI_RESPONSE;
 
@@ -82,7 +80,7 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 		, action
 		, ++actionid
 	);
-	TRACE("ami action sync ---------\n%s", sdata.s);
+	TRACE("ami_sync action ---------\n%s", sdata.s);
 	struct timespec waittime;
 	clock_gettime(CLOCK_REALTIME, &waittime);	// NTP영향받아야 함
 	waittime.tv_sec += 5;
@@ -94,6 +92,14 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action)
 	int rc = pthread_cond_timedwait(&condResp, &mutexResp, &waittime);
 	if (!rc) {
 		// 정상처리
+		if (logprint) {
+			int i, len = 0;
+			char msg[2048];
+			for (i = 0; i < pResponse->responses.rec_count; i++) {
+				len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", pResponse->responses.key[i], pResponse->responses.value[i]);
+			}
+			TRACE("ami_sync response ---------\n%s", msg);
+		}
 	}
 	else {
 		if (rc == ETIMEDOUT) {
@@ -125,7 +131,7 @@ void AMI_MANAGE::ami_async(char* action) {
 		, action
 		, ++actionid
 	);
-	TRACE("ami action async ---------\n%s", sdata.s);
+	TRACE("ami_async action ---------\n%s", sdata.s);
 	write(ami_socket->sd, sdata.s, sdata.req_len);
 	ami_unlock();
 }
@@ -146,13 +152,13 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 
 	// 이하는 ami_message 만 이리 온다고 가정하고 함수 작성한다.
 	TST_DATA& rdata = *psocket->recv;
-	// TST_DATA& sdata = *psocket->send;
+	TST_DATA& sdata = *psocket->send;
 	TST_USER& udata = *(PTST_USER)psocket->user_data;
 	AMI_MANAGE& manage = *(PAMI_MANAGE)udata.s;
-
+	int remain;
 	if (psocket->events & EPOLLIN) {
-		uint remain = rdata.s_len - rdata.com_len - 1; // 현재 남은 공간, -1은 마지막문자로 널스트링을 넣기 위하여
-		if (remain > rdata.checked_len)
+		remain = rdata.s_len - rdata.com_len - 1; // 현재 남은 공간, -1은 마지막문자로 널스트링을 넣기 위하여
+		if (remain > (int)rdata.checked_len)
 			remain = rdata.checked_len;
 
 		clock_gettime(CLOCK_REALTIME, &rdata.trans_time);
@@ -225,42 +231,60 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 			}
 			return tst_suspend;
 		}
-
-		PATP_DATA atpdata = atp_alloc(sizeof(AMI_EVENTS));
-		AMI_EVENTS& events = *(PAMI_EVENTS)&atpdata->s;
+		
+		char* ptr = strchr(rdata.s, ':');
+		if (*ptr && *++ptr == ' ') {
+			++ptr;
+			int len = strcspn(ptr, "\r\n") + 1;
+			if (len < 1) len = 1;
+			char ev_id[len];
+			bzero(ev_id, len);
+			strncpy(ev_id, ptr, len - 1);
+			map<const char*, void*>::iterator it;
+			for (it = g_process.begin(); it != g_process.end(); it++) {
+				if (!strcmp(it->first, ev_id)) {
+					// 이벤트에 대한 처리를 여기서 직접하지 않고 AsyncThreadPool 로 넘기는 이유는
+					// 이 함수가 종료되어야 다음 이벤트를 가져오러 가기 때문이다
+					// 등록된 이벤트가 있는 것만 ASyncThreadPool 을 호출하자....
+					PATP_DATA atpdata = atp_alloc(sizeof(AMI_EVENTS));
+					AMI_EVENTS& events = *(PAMI_EVENTS)&atpdata->s;
+					strncpy(events.event, rdata.s, rdata.com_len);
+					parse_amievent(events);
+					// 이벤트 처리
+					atpdata->func = process_events;
+					atp_addQueue(atpdata);
+					// TRACE("REQUEST ami events(%s)...\n", events.value[0]);
+					break;
+				}
+			}
+		}
+#if 0
+		AMI_EVENTS events;
 		strncpy(events.event, rdata.s, rdata.com_len);
 		parse_amievent(events);
-		rdata.reset_data();
-
-#if 0
 		int i, len = 0;
 		char msg[2048];
 		len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
 		for (i = 0; i < events.rec_count; i++) {
 			len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
 		}
-		printf("%s\n", msg);
+		TRACE("%s\n", msg);
 #endif
 
-
-		// 이벤트 처리
-		atpdata->func = process_events;
-		atp_addQueue(atpdata);
-		// TRACE("REQUEST ami events(%s)...\n", events.value[0]);
-
-
 	} else if (psocket->events & EPOLLOUT) {
-		printf("---send remain(%d).....\n", psocket->send->checked_len);
+		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
+		TRACE("---send remain(%d).....\n", psocket->send->checked_len);
 
 	} else {
 		if (psocket->events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR)) {
 			// 연결이 끊어졌다.
-			printf("---흐미 끊어졌다.....\n");
+			TRACE("---흐미 AMI 끊어졌다.....\n");
 			ami_socket = NULL;
 		}
 
 	}
 
+	rdata.reset_data();
 	return tst_suspend;
 }
 
@@ -275,7 +299,9 @@ TST_STAT my_disconnected(PTST_SOCKET psocket) {
 		}
 	}
 	else {
+#ifdef DEBUG
 		TRACE("--- disconnected client socket....%s(%s:%d) \n", __func__, inet_ntoa(psocket->client.sin_addr), ntohs(psocket->client.sin_port));
+#endif
 	}
 
 	return tst_suspend;
@@ -293,7 +319,6 @@ ATP_STAT atpfunc(PATP_DATA atpdata)
 
 int main(int argc, char* argv[])
 {
-	g_exit = 0;
 
 	atp_create(3, atpfunc);
 
@@ -302,7 +327,7 @@ int main(int argc, char* argv[])
 
 	server.setEventDisonnected(my_disconnected);
 
-	if (!server.create(5, "0.0.0.0", 4060, http, 4096, 4096)) {
+	if (!server.create(5, "0.0.0.0", 1234, http, 4096, 4096)) {
 		printf("---쓰레드풀이 기동 되지 못했다....\n");
 		return 0;
 	}
@@ -312,21 +337,20 @@ int main(int argc, char* argv[])
 	// 처리할 이벤트를 등록 한다....
 
 	g_process.clear();
-	g_process["Hangup"] = (void*)event_hangup;
-	g_process["DialBegin"] = (void*)event_dialbegin;
+	g_process["UserEvent"] = (void*)event_userevent;
 	g_process["DialEnd"] = (void*)event_dialend;
-	// g_process["VarSet"] = (void*)event_varset;
 
 	map<const char*, void*>::iterator it;
 	for (it = g_process.begin(); it != g_process.end(); it++) {
-		printf(":%s: event func address -> %lX\n", it->first, ADDRESS(it->second));
+		TRACE(":%s: event func address -> %lX\n", it->first, ADDRESS(it->second));
 	}
 
 	g_route.clear();
 	g_route["/dtmf"] = (void*)http_dtmf;
 	g_route["/transfer"] = (void*)http_transfer;
+	g_route["/keepalive"] = (void*)http_alive;
 	for (it = g_route.begin(); it != g_route.end(); it++) {
-		printf(":%s: http route func address -> %lX\n", it->first, ADDRESS(it->second));
+		TRACE(":%s: http route func address -> %lX\n", it->first, ADDRESS(it->second));
 	}
 
 	// -------------------------------------------------------------------------------------

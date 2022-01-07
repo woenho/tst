@@ -46,6 +46,8 @@ char* urlDecode(const char* str) {
 TST_STAT http(PTST_SOCKET psocket)
 {
 	// AMI 소켓은 psocket->func 에 ami_event 를 등록해 두었다
+	// 모든 ami 패킷은 ami_event 가 읽고 처리가 등록된 이벤트는 process_events 를 호출한다
+	// process_events 는 등록된 이벤트 별 처리 함수를 호출한다
 	if (psocket->func) {
 		TST_STAT next = psocket->func(psocket);
 		if (next != tst_run)
@@ -59,26 +61,45 @@ TST_STAT http(PTST_SOCKET psocket)
 
 	TST_DATA& rdata = *psocket->recv;	// 수신버퍼
 	TST_DATA& sdata = *psocket->send;	// 발신버퍼
-
+	int remain;
 	// http parse
 	if (psocket && psocket->events & EPOLLIN) {
+		clock_gettime(CLOCK_REALTIME, &rdata.trans_time);
 		if (rdata.checked_len) {
-			uint remain = rdata.s_len - rdata.req_pos - rdata.com_len;
-			if (remain > rdata.checked_len)
+			remain = rdata.s_len - rdata.req_pos - rdata.com_len;
+			TRACE("remain=%d, checked_len=%d\n", remain, rdata.checked_len);
+			if (remain > (int)rdata.checked_len)
 				remain = rdata.checked_len;
 
-			do {
-				// 한 바이트씩 읽어야 메시지 종료(\r\n\r\n)를 정확히 검증할 수 있다.
-				// 다음 메시지는 담에 읽자. POST 라면 Contents-Length 가 들어오아 아니면 chunk.... 미지원
-				rdata.com_len += read(psocket->sd, rdata.s + rdata.req_pos + rdata.com_len, 1);
-			} while (--remain
+			while (remain-- > 0 
+				&& (rdata.req_pos + rdata.com_len) < rdata.s_len
 				&& (rdata.com_len < 4
 					|| rdata.s[rdata.req_pos + rdata.com_len - 4] != '\r'
 					|| rdata.s[rdata.req_pos + rdata.com_len - 3] != '\n'
 					|| rdata.s[rdata.req_pos + rdata.com_len - 2] != '\r'
 					|| rdata.s[rdata.req_pos + rdata.com_len - 1] != '\n'
 					)
-				);
+				)
+			{
+				// 한 바이트씩 읽어야 메시지 종료(\r\n\r\n)를 정확히 검증할 수 있다.
+				// 다음 메시지는 담에 읽자. POST 라면 Contents-Length 가 들어오아 아니면 chunk.... 미지원
+				rdata.com_len += read(psocket->sd, rdata.s + rdata.req_pos + rdata.com_len, 1);
+			} 
+
+			if ((rdata.req_pos + rdata.com_len) >= rdata.s_len) {
+				// http header 가 넘 크다... 기본은 4K까지만 지원한다
+				sdata.com_len = sprintf(sdata.s,
+					"HTTP/1.0 413 Payload Too Large\r\n"
+					"Content-Type: text/html\r\n"
+					"Connection: close\r\n\r\n");
+
+				write(psocket->sd, sdata.s, sdata.com_len);
+
+				// tst_send: req_len을 설정하면 work_thread 가 보내준다
+				// tst_send: req_len을 설정하지 않으면 메시지 다보낸 후에 EPOLLOUT 으로 사용자함수 호출되며 checked_len = 0 이다
+				// http 프로토콜상 메시지를 보냈으면 연결을 종료한다
+				return tst_disconnect;
+			}
 
 			if (rdata.com_len < 4
 				|| rdata.s[rdata.req_pos + rdata.com_len - 4] != '\r'
@@ -86,22 +107,6 @@ TST_STAT http(PTST_SOCKET psocket)
 				|| rdata.s[rdata.req_pos + rdata.com_len - 2] != '\r'
 				|| rdata.s[rdata.req_pos + rdata.com_len - 1] != '\n') {
 				return tst_suspend;
-			}
-
-
-			if ((rdata.req_pos + rdata.com_len) >= rdata.s_len) {
-				// 413 Payload Too Large
-				// http header 가 넘 크다... 기본은 4K까지만 지원한다
-				sdata.com_len = sprintf(sdata.s,
-					"HTTP/1.0 413 Payload Too Large\r\n"
-					"Content - Type: text / html\r\n"
-					"Connection : close\r\n\r\n");
-				write(psocket->sd, sdata.s, sdata.com_len);
-
-				// tst_send: req_len을 설정하면 work_thread 가 보내준다
-				// tst_send: req_len을 설정하지 않으면 메시지 다보낸 후에 EPOLLOUT 으로 사용자함수 호출되며 checked_len = 0 이다
-				// http 프로토콜상 메시지를 보냈으면 연결을 종료한다
-				return tst_disconnect;
 			}
 		}
 
@@ -157,15 +162,6 @@ TST_STAT http(PTST_SOCKET psocket)
 				}
 			}
 
-			// split uri
-			for (url = src = req.request_uri; *url; url++) {
-				while (*url && *url != '?') url++;
-				if (*url == '?') {
-					*url = '\0';
-					req.query_string = url + 1;
-				}
-			}
-			 
 			// header parse
 			while (*url) {
 				while (*url && *++url != '\r');
@@ -183,6 +179,15 @@ TST_STAT http(PTST_SOCKET psocket)
 				}
 			}
 
+			// split uri
+			for (url = src = req.request_uri; *url; url++) {
+				while (*url && *url != '?') url++;
+				if (*url == '?') {
+					*url = '\0';
+					req.query_string = url + 1;
+				}
+			}
+			 
 			int i;
 			for (i = 0; i < req.num_headers; i++) {
 				if (!strcmp(req.http_headers[i].name, "Content-Length")) {
@@ -191,8 +196,8 @@ TST_STAT http(PTST_SOCKET psocket)
 						if (length > (int)(rdata.s_len - rdata.com_len)) {
 							sdata.com_len = sprintf(sdata.s,
 								"HTTP/1.0 413 Payload Too Large\r\n"
-								"Content - Type: text / html\r\n"
-								"Connection : close\r\n\r\n");
+								"Content-Type: text / html\r\n"
+								"Connection: close\r\n\r\n");
 							write(psocket->sd, sdata.s, sdata.com_len);
 							return tst_disconnect;
 						}
@@ -225,11 +230,16 @@ TST_STAT http(PTST_SOCKET psocket)
 #else
 			map<const char*, void*>::iterator it;
 			for (it = g_route.begin(); it != g_route.end(); it++) {
-				printf(":%s: http func address -> %lX\n", it->first, ADDRESS(it->second));
+				// printf(":%s: http func address -> %lX\n", it->first, ADDRESS(it->second));
 				if (!strcmp(req.request_uri, it->first)) {
-					void* trans = it->second;
-					httpproc* func = (httpproc*)trans;
+					httpproc* func = (httpproc*)it->second;
 					TST_STAT next = func(psocket);
+					if (next != tst_disconnect) {
+						// keep alive 소켓이 연결을 끊지 않아서 이걸 삭제해 주어야 다음 메시지를 파싱처리한다.
+						free(psocket->user_data);
+						psocket->user_data = NULL;
+						rdata.reset_data();
+					}
 					return next;
 				}
 			}
@@ -265,7 +275,7 @@ TST_STAT http(PTST_SOCKET psocket)
 
 	}
 	else if (psocket && psocket->events & EPOLLOUT) {
-		// TST_DATA& data = *psocket->send;
+		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
 		if (!sdata.checked_len) {
 			printf("try disconnect http protocol....\n");
 			return tst_disconnect;
@@ -282,6 +292,4 @@ TST_STAT http(PTST_SOCKET psocket)
 	// 소켓을 클로즈해도 tcp 가 send buffer 에 있는 나머지 자료 다 보내고 닫아준다.
 	return tst_disconnect;
 }
-
-
 
