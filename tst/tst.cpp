@@ -45,7 +45,7 @@ int	tstpool::tcp_create(const char* ip, u_short port_no)
 
 	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
-		printf("server socket create error port = %d, errno = %d", port_no, errno);
+		printf("server socket create error port = %d, errno = %d\n", port_no, errno);
 		return -1;
 	}
 
@@ -63,14 +63,15 @@ int	tstpool::tcp_create(const char* ip, u_short port_no)
 			}
 			else if (errno == EADDRINUSE)
 			{
-				printf("bind error. 사용중인 port(%d)임", port_no);
+				fprintf(stderr, "tstpool bind error. 사용중인 port(%d)임, retry count(%d)\n", port_no, retry);
 				optval = 1;
 				setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&optval, sizeof(optval));
 			}
 			else
 			{
-				printf("bind error. ip=%s, port=%d, errno=%d", inet_ntoa(addr_in.sin_addr), port_no, errno);
+				fprintf(stderr, "tstpool bind error. ip=%s, port=%d, errno=%d\n", inet_ntoa(addr_in.sin_addr), port_no, errno);
 			}
+			fflush(stderr);
 			usleep(200000); // 0.2 sec
 		}
 		else
@@ -878,5 +879,6 @@ void tstpool::closesocket(int sd)
 	if (m_fdisconnected)
 		m_fdisconnected(socket);
 
-    delete socket;	
+	if(socket)
+		delete socket;	
 }

@@ -221,12 +221,14 @@ namespace tst {
 			pthread_mutex_unlock(&m_mutexConnect);
 		}
 
-		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 발신해라 (첨 등록에 EPOLLOUT 없다)
+		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 발신등록해라 (첨 등록에 EPOLLOUT 없다)
+		// 또는 사용자가 방화벽 처리를 하고 싶다면 m_fconnected()에서 처리해라
+		// tst_send 보다 큰 값을 리턴하면 연결을 해제한다
 		// 나중에 다른 클라이언트에 발신하고 싶으면 need_send() 호출해라
 		void setEventNewConnected(tstFunction func) { m_fconnected = func; }		// m_fconnected 함수 설정
 		void setEventDisonnected(tstFunction func) { m_fdisconnected = func; }	// m_fdisconnected 함수 설정
 
-		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 해라.
+		// 최초 연결부터 클라이언트에 뭐가 쓰고 싶다면 m_fconnected() 에서 버퍼에 설정만 하고 tst_send를 리턴해라.
 		// 워크쓰레드가 보내도록 하자
 		// 만일 특정 클라이언트에 대한 연결을 허가하지 않는다면 tst_disconnect 를 리턴해라
 		// 새로운 연결이 들어 왔을 때 TST_SOCKET을 생성하고 epoll에 등록하기전에 호출해 준다
