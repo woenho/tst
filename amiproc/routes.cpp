@@ -8,7 +8,7 @@ PAMI_RESPONSE SendDtmf(const char* caller, const char* dir, const char* dtmf)
 
 			resp = new AMI_RESPONSE;
 			resp->result = 400;
-			sprintf(resp->msg, "dir is not corected...diir=%s", dir);
+			sprintf(resp->msg, "dir is not corected...dir=%s", dir);
 			return resp;
 
 }

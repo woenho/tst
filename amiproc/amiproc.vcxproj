@@ -153,6 +153,7 @@
   <ItemGroup>
     <ClInclude Include="amiaction.h" />
     <ClInclude Include="amiproc.h" />
+    <ClInclude Include="http.h" />
     <ClInclude Include="processevents.h" />
   </ItemGroup>
   <ItemDefinitionGroup />

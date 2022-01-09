@@ -164,19 +164,20 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		clock_gettime(CLOCK_REALTIME, &rdata.trans_time);
 
 		// login 외의 모든 메시지는 "\r\n" 이 두 개로 구분된다
-		do {
+		while (remain-- > 0
+			&& ( rdata.com_len < 4
+				|| rdata.s[rdata.com_len - 4] != '\r'
+				|| rdata.s[rdata.com_len - 3] != '\n'
+				|| rdata.s[rdata.com_len - 2] != '\r'
+				|| rdata.s[rdata.com_len - 1] != '\n'
+				)
+			) {
 			rdata.com_len += read(psocket->sd, rdata.s + rdata.com_len, 1);
-		} while (--remain && (
-			rdata.com_len < 4
+		}
+
+
+		if (rdata.com_len < 4
 			|| rdata.s[rdata.com_len - 4] != '\r'
-			|| rdata.s[rdata.com_len - 3] != '\n'
-			|| rdata.s[rdata.com_len - 2] != '\r'
-			|| rdata.s[rdata.com_len - 1] != '\n'
-			)
-			);
-
-
-		if (rdata.s[rdata.com_len - 4] != '\r'
 			|| rdata.s[rdata.com_len - 3] != '\n'
 			|| rdata.s[rdata.com_len - 2] != '\r'
 			|| rdata.s[rdata.com_len - 1] != '\n') {
@@ -192,7 +193,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				manage.resp_lock();
 				AMI_RESPONSE& resp = *manage.pResp;
 
-				strncpy(resp.responses.event, rdata.s, rdata.com_len);
+				strncpy(resp.responses.event, rdata.s, sizeof(resp.responses.event) - 1);
 				parse_amievent(resp.responses);
 				rdata.reset_data();
 
