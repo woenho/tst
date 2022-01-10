@@ -164,7 +164,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		clock_gettime(CLOCK_REALTIME, &rdata.trans_time);
 
 		// login 외의 모든 메시지는 "\r\n" 이 두 개로 구분된다
-		while (--remain > 0
+		while (remain-- > 0
 			&& ( rdata.com_len < 4
 				|| rdata.s[rdata.com_len - 4] != '\r'
 				|| rdata.s[rdata.com_len - 3] != '\n'
