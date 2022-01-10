@@ -185,6 +185,7 @@ namespace tst {
 		// thread function
 		tstFunction		tst_func;		// socket 으로부터 데이타가 들어오면 이를 처리할 사용자 함수
 		tstFunction		tst_idle;		// 쓰레드가 쉬고있을 때 호출할 사용자 함수
+		double get_averageElapsedtime() { return exec_count ? sum_time / exec_count : 0.0f;}
 	} TST_THREAD_INFO, * PTST_THREAD_INFO;
 
 	//----------------------------------------
@@ -245,15 +246,15 @@ namespace tst {
 		int		m_epfd;						// epoll descriptor
 		pthread_t m_main_thread;			// main thread id
 		uint32_t m_thread_count;			// work thread count
-		bool	m_main_run;					// main thread loop boolean value, if set to 0 then main thread terminate
-		bool	m_work_run;					// work thread loop boolean value, if set to 0 then work thread terminate
+		bool m_main_run;					// main thread loop boolean value, if set to 0 then main thread terminate
+		bool m_work_run;					// work thread loop boolean value, if set to 0 then work thread terminate
 		TST_SOCKETTYPE m_socktype;			// m_sockmain type (0: sock_sub, 1: sock_listen, 2: sock_client)
 		// 사용자지정(sock_client)이면 연결을 직접하고 TST_SOCKET도 직접 new 해서 addsocket()을 통해 m_connect에 추가 해야한다
-		int		m_sockmain;					// main socket id, 메인쓰레드에서 자동으로 epoll에 등록해 준다
+		int m_sockmain;					// main socket id, 메인쓰레드에서 자동으로 epoll에 등록해 준다
 		// mutex 초기화(선언과 함께=PTHREAD_MUTEX_INITIALIZER) or pthread_mutex_init(&mutex,NULL);
 		pthread_mutex_t	m_mutexConnect;		// m_connect 에 대한 동기화작업이 필요하면 사용한다
 		pthread_mutex_t	m_mutexWork;		// 워크쓰레드들 사이에 동기화가 필요한 경우 사용하기 위한 뮤텍스
-		PTST_THREAD_INFO	m_workers;				// 워크쓰레드 테이블
+		PTST_THREAD_INFO m_workers;				// 워크쓰레드 테이블
 		struct timespec m_waittime;			// 각 쓰레드 마다 스스로 깨어날 시간을 지정한다 (default 3초)
 		uint64_t m_endwaittime;				// 쓰레드풀 종료 시, 아직 실행되고 있는 워크 쓰레드의 종료를 기다리는 시간(나노초)
 		uint32_t m_size_event;				// m_events 의 크기
