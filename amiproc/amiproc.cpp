@@ -328,7 +328,7 @@ int main(int argc, char* argv[])
 
 	server.setEventDisonnected(my_disconnected);
 
-	if (!server.create(5, "0.0.0.0", 1234, http, 4096, 4096)) {
+	if (server.create(5, "0.0.0.0", 1234, http, 4096, 4096) < 1) {
 		printf("---쓰레드풀이 기동 되지 못했다....\n");
 		return 0;
 	}
