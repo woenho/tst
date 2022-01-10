@@ -12,7 +12,7 @@ ATP_STAT amiLogin(PATP_DATA atp_data)
 	struct	sockaddr_in s_info;
 	AMI_LOGIN& login = *(PAMI_LOGIN)&atp_data->s;
 
-	int sd = server.tcp_connect(login.Host, 5038, &s_info);
+	int sd = server.tcp_connect(login.Host, login.Port, &s_info);
 	if (sd < 1) {
 		// 연결 실패
 		printf("--- tcp socket connect failed(%d:%s)\n", errno, strerror(errno));

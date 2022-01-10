@@ -9,6 +9,7 @@ using namespace tst;
 
 typedef struct AMI_LOGIN_T {
 	char Host[32];
+	uint16_t Port;
 	char Username[32];
 	char Secret[32];
 }AMI_LOGIN, * PAMI_LOGIN;

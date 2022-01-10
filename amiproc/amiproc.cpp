@@ -367,6 +367,7 @@ int main(int argc, char* argv[])
 			PATP_DATA atpdata = atp_alloc(sizeof(AMI_LOGIN));
 			AMI_LOGIN& login = *(PAMI_LOGIN)&atpdata->s;
 			strncpy(login.Host, "127.0.0.1", sizeof(login.Host));
+			login.Port = 5038;
 			strncpy(login.Username, "call", sizeof(login.Username));
 			strncpy(login.Secret, "call", sizeof(login.Secret));
 			atpdata->func = amiLogin;
