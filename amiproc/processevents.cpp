@@ -1,17 +1,19 @@
+/*
+* amiproc.cpp 에 있는 ami_event() 함수가 입력되는 이벤트메시지를 분리하여 AMI_EVENTS 구조체에 넣는다
+* 이 파일은 그 이벤트둘 중 처리할 것으로 g_process 에 등록된 이벤트 처리 함수들을 모아 놓는다
+* 즉 실제 이벤트를 처리하는 함수들은 여기에 모아놓는다
+*/
 #include "amiaction.h"
 #include "http.h"
+#include "processevents.h"
+
 
 ATP_STAT event_hangup(AMI_EVENTS& events)
 {
 	ATP_STAT next = stat_suspend;
 
-	int i, len = 0;
-	char msg[2048];
-	len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-	for (i = 0; i < events.rec_count; i++) {
-		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-	}
-	printf("%s\n", msg);
+	logging_events(events);
+
 
 	return next;
 }
@@ -21,13 +23,7 @@ ATP_STAT event_dialbegin(AMI_EVENTS& events)
 {
 	ATP_STAT next = stat_suspend;
 
-	int i, len = 0;
-	char msg[2048];
-	len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-	for (i = 0; i < events.rec_count; i++) {
-		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-	}
-	printf("%s\n", msg);
+	logging_events(events);
 
 
 	return next;
@@ -37,13 +33,7 @@ ATP_STAT event_varset(AMI_EVENTS& events)
 {
 	ATP_STAT next = stat_suspend;
 
-	int i, len = 0;
-	char msg[2048];
-	len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-	for (i = 0; i < events.rec_count; i++) {
-		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-	}
-	TRACE("%s\n", msg);
+	logging_events(events);
 
 	return next;
 }
@@ -51,14 +41,6 @@ ATP_STAT event_varset(AMI_EVENTS& events)
 ATP_STAT event_userevent(AMI_EVENTS& events)
 {
 	ATP_STAT next = stat_suspend;
-
-	int i, len = 0;
-	char msg[2048];
-	len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-	for (i = 0; i < events.rec_count; i++) {
-		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-	}
-	TRACE("%s\n", msg);
 
 	const char* szEventName = NULL;
 	const char* szChannel = NULL;
@@ -203,33 +185,3 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 }
 
 
-ATP_STAT process_events(PATP_DATA atp_data)
-{
-	ATP_STAT next = stat_suspend;
-
-	AMI_EVENTS& events = *(PAMI_EVENTS)&atp_data->s;
-	events.nThreadNo = atp_data->threadNo;
-
-#if 0
-	int i, len = 0;
-	char msg[2048];
-	len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-	for (i = 0; i < events.rec_count; i++) {
-		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-	}
-	printf("%s\n", msg);
-#endif
-
-	// 등록된 이벤트를 처리한다.
-
-	map<const char*, void*>::iterator it;
-	for (it = g_process.begin(); it != g_process.end(); it++) {
-		if (!strcmp(it->first, events.value[0])) {
-			eventproc* func = (eventproc*)it->second;
-			next = func(events);
-			break;
-		}
-	}
-
-	return next;
-}

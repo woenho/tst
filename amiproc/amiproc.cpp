@@ -1,3 +1,21 @@
+/*
+* 이 파일은 대단히 중요한 코어기능을 수행한다
+* 수정함에 매우 신중해야한다.
+* 그 기능은 아래와 같은 목록이다
+* 1. ami event 메시지를 분리하여 AMI_EVENTS 구조체에 넣는다
+* 2. 처리대상 이벤트를 선별하여 AsyncThreadPool에 작업을 의뢰한다 (process_events() 함수를 호출하게 설정한다)
+* 3. 이벤트 관련 중요한 몇가지 함수를 포함한다
+* 3.1 rm_ami_socket(): 생성된 ami 소켓정보를 삭제한다
+* 3.2 get_amivalue(): AMI_EVENTS 구조체에서 지정된 키에 해당하는 값을 찾아준다
+* 3.3 logging_events(): 파싱된 AMI_EVENTS 구조체의 내용을 로깅해 준다
+* 3.4 parse_amievent: ami event 메시지를 파싱하여 AMI_EVENTS 구조체에 넣는다
+* 3.5 ami_sync(): ami action을 실행하고 그 결과값을 가져오기까지 동기화해준다
+* 3.6 ami_async(): ami action을 실행하고 그 결과는 무시된다
+* 3.7 ami_event(): ami 이벤트 처리중심엔진이다. 계속 들어오는 이벤트정보를 한 개 한 개의 메시지단위로 분리 수신하고 분리하여 처리할 함수를 호출해준다 
+* 3.8 my_disconnected(): ami 통신연결이 분리되면 호출되며 글로별변수 ami_socket을 리셋한다, 소켓정보삭제는 tstpoll 에서 자동으로 이루어진다
+* 3.9 atpfunc(): AsyncThreadPool 에서 호출되는 기본 인트로 함수로 실체 event를 처리하는 메인함수인 process_events() 를 호출해주도록 한다.
+* 3.10 process_events(): AsyncThreadPool 을 통하여 호출되는 이벤트처리 메인함수로 g_process 등록된 실제 이벤트별 처리함수를 호출해준다
+*/
 
 #include "amiaction.h"
 #include "http.h"
@@ -7,6 +25,7 @@
 tstpool server;						// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
 PTST_SOCKET ami_socket = NULL;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
 map<const char*, void*> g_process;	// ami event 중 처리하고자 하는 이벹에 대한 함수포인터를 등록해 둔다
+int log_event_level = 0;				// 0이 아닌 값이 설정되면 event 명을 로깅한다
 
 void* rm_ami_socket(tst::TST_USER_T* puser) {
 	
@@ -26,6 +45,16 @@ const char* get_amivalue(AMI_EVENTS& events, const char* key)
 			return events.value[i];
 	}
 	return "";
+}
+
+void logging_events(AMI_EVENTS& events)
+{
+	int i, len = 0;
+	char msg[2048];
+	for (i = 0; i < events.rec_count; i++) {
+		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
+	}
+	printf("--- %s(atp threadno:%d)...\n%s\n", __func__, events.nThreadNo, msg);
 }
 
 int parse_amievent(AMI_EVENTS& events) {
@@ -150,6 +179,10 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		return tst_run;
 	}
 
+	if (log_event_level > 1) {
+		printf("--- event --- enter %s()", __func__);
+	}
+
 	// 이하는 ami_message 만 이리 온다고 가정하고 함수 작성한다.
 	TST_DATA& rdata = *psocket->recv;
 	TST_DATA& sdata = *psocket->send;
@@ -241,6 +274,13 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 			char ev_id[len];
 			bzero(ev_id, len);
 			strncpy(ev_id, ptr, len - 1);
+
+			if (log_event_level) {
+				AMI_EVENTS log;
+				strncpy(log.event, rdata.s, rdata.com_len);
+				parse_amievent(log);
+				printf("--- event --- %s --- %s", get_amivalue(log, "Channel"), ev_id);
+			}
 			map<const char*, void*>::iterator it;
 			for (it = g_process.begin(); it != g_process.end(); it++) {
 				if (!strcmp(it->first, ev_id)) {
@@ -263,13 +303,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 		AMI_EVENTS events;
 		strncpy(events.event, rdata.s, rdata.com_len);
 		parse_amievent(events);
-		int i, len = 0;
-		char msg[2048];
-		len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-		for (i = 0; i < events.rec_count; i++) {
-			len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-		}
-		TRACE("%s\n", msg);
+		logging_events(events);
 #endif
 
 	} else if (psocket->events & EPOLLOUT) {
@@ -315,6 +349,31 @@ ATP_STAT atpfunc(PATP_DATA atpdata)
 	if (atpdata->func) {
 		next = atpdata->func(atpdata);
 	}
+	return next;
+}
+
+ATP_STAT process_events(PATP_DATA atp_data)
+{
+	ATP_STAT next = stat_suspend;
+
+	AMI_EVENTS& events = *(PAMI_EVENTS)&atp_data->s;
+	events.nThreadNo = atp_data->threadNo;
+
+#if 0
+	logging_events(events);
+#endif
+
+	// 등록된 이벤트를 처리한다.
+
+	map<const char*, void*>::iterator it;
+	for (it = g_process.begin(); it != g_process.end(); it++) {
+		if (!strcmp(it->first, events.value[0])) {
+			eventproc* func = (eventproc*)it->second;
+			next = func(events);
+			break;
+		}
+	}
+
 	return next;
 }
 
