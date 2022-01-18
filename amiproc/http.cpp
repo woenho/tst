@@ -1,7 +1,8 @@
 /*
+* http 수신에있어서 코어모듈이다. 수정에 신중함이 필요하다
 * 소켓을 통하여 들어온 메시지를 HTTP 프로토콜에 따라 '\r\n\r\n' 까지 입력을 받아들이고 이를 http 프로토콜에 따라 파싱한다
-* 파싱된 URI 정보가 g_route 에 등록된 라우즈 정보가 있는 경우 해당 라우팅 함수를 호출해 준다 (routes.cpp)
-* 기본적으로 파일및 디렉토리난 http 파일 브라우징은 기본 지원하지않는다. 업무특성상 필요하지 않기 때문이다
+* 파싱된 URI 정보가 g_route 에 등록된 라우트패스가 있는 경우 해당 라우팅 함수를 호출해 준다 (routes.cpp)
+* 기본적으로 파일 및 디렉토리의 http 파일브라우징은 기본적으로 지원하지않는다. 업무특성상 필요하지 않기 때문이다
 * HTTP 메소드 중 GET, POST 만 지원할 예정이다
 */
 #include "amiaction.h"
@@ -9,10 +10,12 @@
 
 map<const char*, void*> g_route;
 
-char* urlDecode(const char* str) {
+char* urlDecodeNewString(const char* str) {
 	char eStr[] = "00"; /* for a hex code */
 	int len = strlen(str);
-	char* dStr = (char*)calloc(len + 1, 1);
+	char* dStr = (char*)malloc(len + 1);
+
+	bzero(dStr, len + 1);
 
 	int i, j; /* the counter for the string */
 
@@ -45,6 +48,43 @@ char* urlDecode(const char* str) {
 	return dStr;
 }
 
+char* urlDecodeRewite(char* str)
+{
+	char eStr[] = "00"; /* for a hex code */
+	int len = strlen(str);
+	char* dStr = str;
+
+	int i, j; /* the counter for the string */
+
+	for (i = 0, j = 0; i < len; ++i, ++j) {
+
+		if (str[i] == '%') {
+			if (str[i + 1] == 0 || str[i + 2] == 0) {
+				break;
+			}
+
+			if (isxdigit(str[i + 1]) && isxdigit(str[i + 2])) {
+
+				/* combine the next to numbers into one */
+				eStr[0] = str[i + 1];
+				eStr[1] = str[i + 2];
+
+				/* convert it to decimal */
+				long int x = strtol(eStr, NULL, 16);
+
+				dStr[j] = x;
+				i++;
+				i++;
+			}
+		}
+		else {
+			if (j < i)
+				dStr[j] = str[i];
+		}
+	}
+	dStr[j] = '\0';
+	return dStr;
+}
 
 // 일단 기동되는 tcp 서버는 HTTP 프로토콜을 지원하도록 한다
 // 외부에서 amiprocess에 연결하여 요청하는 것은 기본적으로 http GET 메소드를 지원한다
@@ -94,11 +134,7 @@ TST_STAT http(PTST_SOCKET psocket)
 
 			if ((rdata.req_pos + rdata.com_len) >= rdata.s_len) {
 				// http header 가 넘 크다... 기본은 4K까지만 지원한다
-				sdata.com_len = sprintf(sdata.s,
-					"HTTP/1.0 413 Payload Too Large\r\n"
-					"Content-Type: text/html\r\n"
-					"Connection: close\r\n\r\n");
-
+				sdata.com_len = sprintf(sdata.s, "HTTP/1.0 413 Payload Too Large\r\n\n");
 				write(psocket->sd, sdata.s, sdata.com_len);
 
 				// tst_send: req_len을 설정하면 work_thread 가 보내준다
@@ -125,9 +161,6 @@ TST_STAT http(PTST_SOCKET psocket)
 			// user_data 가 설정되지 않았다면 http header를 수신했다
 			psocket->user_data = REQUEST_INFO::alloc();
 			REQUEST_INFO& req = *(PREQUEST_INFO)psocket->user_data->s;
-			url = urlDecode(rdata.s);
-			rdata.com_len = sprintf(rdata.s, "%s", url);
-			free(url);
 			url = rdata.s;
 			req.body_string = rdata.s + rdata.com_len;
 			// parse
@@ -151,10 +184,7 @@ TST_STAT http(PTST_SOCKET psocket)
 				}
 				if (!req.http_version) {
 					if (memcmp(src, "HTTP/", 5) || (memcmp(src + 5, "1.0", 3) && memcmp(src + 5, "1.1", 3))) {
-						sdata.com_len = sprintf(sdata.s,
-							"HTTP/1.0 505 HTTP Version Not Supported\r\n"
-							"Content-Type: text/html\r\n"
-							"Connection: close\r\n\r\n");
+						sdata.com_len = sprintf(sdata.s, "HTTP/1.0 505 HTTP Version Not Supported\r\n\r\n");
 						write(psocket->sd, sdata.s, sdata.com_len);
 						clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
 						return tst_disconnect;
@@ -179,9 +209,10 @@ TST_STAT http(PTST_SOCKET psocket)
 					if (*src == ':') {
 						*src++ = '\0';
 						*src++ = '\0';
-						req.http_headers[req.num_headers++].value = src;
+						req.http_headers[req.num_headers].value = src;
 					}
 					src = url;
+					req.num_headers++;
 				}
 			}
 
@@ -193,17 +224,20 @@ TST_STAT http(PTST_SOCKET psocket)
 					req.query_string = url + 1;
 				}
 			}
-			 
+
+			// 이거 살리면 keep-alive용 전문 로깅 많다 헐...
+			// conft("%s(), uri=%s, querystr=%s:", __func__, req.request_uri, req.query_string);
+
+			urlDecodeRewite(req.request_uri);
+			urlDecodeRewite((char*)req.query_string);
+
 			int i;
 			for (i = 0; i < req.num_headers; i++) {
 				if (!strcmp(req.http_headers[i].name, "Content-Length")) {
 					int length = atoi(req.http_headers[i].value);
 					if (length) {
 						if (length > (int)(rdata.s_len - rdata.com_len)) {
-							sdata.com_len = sprintf(sdata.s,
-								"HTTP/1.0 413 Payload Too Large\r\n"
-								"Content-Type: text / html\r\n"
-								"Connection: close\r\n\r\n");
+							sdata.com_len = sprintf(sdata.s, "HTTP/1.0 413 Payload Too Large\r\n\r\n");
 							write(psocket->sd, sdata.s, sdata.com_len);
 							return tst_disconnect;
 						}
@@ -219,7 +253,7 @@ TST_STAT http(PTST_SOCKET psocket)
 			// post body 수신했다.
 			REQUEST_INFO& req = *(PREQUEST_INFO)psocket->user_data->s;
 			url = req.body_string;
-			// body 수신 후 처리..... userdefined func call()???
+			// body 수신 후 처리..... user defined func call()???
 
 
 
@@ -228,12 +262,6 @@ TST_STAT http(PTST_SOCKET psocket)
 		REQUEST_INFO& req = *(PREQUEST_INFO)psocket->user_data->s;
 
 		if (!strcmp(req.request_method, "GET") || !strcmp(req.request_method, "POST")) {
-#if 0
-			sdata.com_len = sprintf(sdata.s,
-				"HTTP/1.1 500 Internal Server Error 아직 http parser 구현안했음....\r\n"
-				"Content-Type: text/html\r\n"
-				"Connection: close\r\n\r\n");
-#else
 			map<const char*, void*>::iterator it;
 			for (it = g_route.begin(); it != g_route.end(); it++) {
 				// printf(":%s: http func address -> %lX\n", it->first, ADDRESS(it->second));
@@ -251,18 +279,14 @@ TST_STAT http(PTST_SOCKET psocket)
 			}
 
 			if (!strcmp(req.request_uri, "/favicon.ico")) {
-				sdata.com_len = sprintf(sdata.s,
-					"HTTP/1.1 404 Not found\r\n"
-					"Content-Type: text/html\r\n"
-					"Connection: close\r\n\r\n"
-				);
+				sdata.com_len = sprintf(sdata.s, "HTTP/1.1 404 Not found\r\n\r\n");	// 404는 헤더를 첨부하지 않는다. 이후 모든 것은 body로 처리된다
 			} else {
-				// http url로 라우트 정보를 등록했으면 그에 때한 처리를 아니면 404 메시지를....
+
+				TRACE("%s(), uri=%s, querystr=%s:", __func__, req.request_uri, req.query_string);
 
 				rdata.com_len = sprintf(rdata.s, "<HTML><HEAD></HEAD><BODY>잘 수신했읍니다.<br>그러나 아직 이에 대한 처리를 구현하지 않았음...</BODY></HTML>");
-
 				sdata.com_len = sprintf(sdata.s,
-					"HTTP/1.1 200 Ok\r\n"
+					"HTTP/1.1 501 Not Implemented\r\n"
 					"Content-Type: text/html;charset=utf-8\r\n"
 					"Content-Length: %d\r\n"
 					"Connection: close\r\n\r\n"
@@ -271,14 +295,23 @@ TST_STAT http(PTST_SOCKET psocket)
 					, rdata.s
 				);
 			}
+		} else {
+			TRACE("%s(), uri=%s, querystr=%s:", __func__, req.request_uri, req.query_string);
 
-#endif
-			rdata.reset_data();
-			write(psocket->sd, sdata.s, sdata.com_len);
-			clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
-
+			rdata.com_len = sprintf(rdata.s, "<HTML><HEAD></HEAD><BODY>잘 수신했읍니다.<br>그러나 아직 지원하지않는 메소드입니다.</BODY></HTML>");
+			sdata.com_len = sprintf(sdata.s,
+				"HTTP/1.1 501 Not Implemented\r\n"
+				"Content-Type: text/html;charset=utf-8\r\n"
+				"Content-Length: %d\r\n"
+				"Connection: close\r\n\r\n"
+				"%s"
+				, rdata.com_len
+				, rdata.s
+			);
 		}
-
+		write(psocket->sd, sdata.s, sdata.com_len);
+		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
+		rdata.reset_data();
 	}
 	else if (psocket && psocket->events & EPOLLOUT) {
 		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
@@ -287,8 +320,9 @@ TST_STAT http(PTST_SOCKET psocket)
 			return tst_disconnect;
 		}
 		else {
+			// 
 			// tst_send 리턴하면 무한룹 탈 수 있다.
-			//return tst_send;
+			// return tst_send;
 		}
 	}
 

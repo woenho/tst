@@ -37,8 +37,8 @@ typedef TST_STAT httpproc(PTST_SOCKET psocket);
 
 extern map<const char*, void*> g_route;
 
-char* urlDecode(const char* str);
-
+char* urlDecodeNewString(const char* str);
+char* urlDecodeRewite(const char* str);
 TST_STAT http_dtmf(PTST_SOCKET psocket);
 TST_STAT http_transfer(PTST_SOCKET psocket);
 TST_STAT http_alive(PTST_SOCKET psocket);
@@ -119,10 +119,9 @@ public:
 		char* pNow;
 		char* pSep;
 		int nLen;
-
-		char* querystr = NULL;
+		char* querystr;
 		if (szQuery && *szQuery)
-			querystr = urlDecode(szQuery);
+			querystr = urlDecodeNewString(szQuery);
 		else
 			return 0;
 

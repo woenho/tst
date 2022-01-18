@@ -81,7 +81,7 @@ EPOLLET: 엣지트리거인 경우.. (비추천) 조건이 변할 때만 감지 
 <br />
 각 소켓마다 확보된 객체(TST_DATA)의 req_len 가 설정되어 있으면 그 크기까지는 쓰레드가 알아서 송수신을 한다.<br />
 req_len은 TST_DATA::s_len 보다 크지 않도록 주의하여야 한다. TST_data::s_len은 송수신 버퍼 크기이다.<br />
-req_len==0 이거나 req_len==result_len 가 되면 사용자함수(THREADINFO::tst_func)를 호출한다.<br />
+req_len==0 이거나 req_len==com_len 가 되면 사용자함수(THREADINFO::tst_func)를 호출한다.<br />
 수신이나 발신에 있어 한 번에는 한 개의 메시지 크기를 넘어서는 송수신을 자동으로 하지 않기 위한 것이다<br />
 <br />
 주의:<br />

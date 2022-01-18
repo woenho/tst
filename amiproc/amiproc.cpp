@@ -54,7 +54,7 @@ void logging_events(AMI_EVENTS& events)
 	for (i = 0; i < events.rec_count; i++) {
 		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
 	}
-	printf("--- %s(atp threadno:%d)...\n%s\n", __func__, events.nThreadNo, msg);
+	TRACE("--- %s(atp threadno:%d)...\n%s", __func__, events.nThreadNo, msg);
 }
 
 int parse_amievent(AMI_EVENTS& events) {
@@ -92,7 +92,7 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 {
 	PAMI_RESPONSE pResponse = new AMI_RESPONSE;
 
-	if (!ami_socket || ami_socket->sd < 1) {
+	if (!ami_socket || ami_socket->type != sock_client) {
 		pResponse->result = -99;
 		strcpy(pResponse->msg, "AMI서버에 연결되지 않음");
 		return pResponse;
@@ -116,7 +116,8 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 	waittime.tv_nsec = 0;
 	
 	pResponse->mode = action_requst;
-	pResp = pResponse;
+	// ami_event() 함수는 AMI_MANAGE::pResp 값이 설정 되면 response 를 대기하는 프로세스가 있다고 인식한다.
+	pResp = pResponse; // ami action에 대한 response를 받으면 ami_event() 함수가 널로 설절정해 준다.
 	write(ami_socket->sd, sdata.s, sdata.req_len);
 	int rc = pthread_cond_timedwait(&condResp, &mutexResp, &waittime);
 	if (!rc) {
@@ -148,7 +149,7 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 }
 
 void AMI_MANAGE::ami_async(char* action) {
-	if (!ami_socket || ami_socket->sd < 1)
+	if (!ami_socket || ami_socket->type != sock_client)
 		return;
 
 	ami_lock();
@@ -180,7 +181,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 	}
 
 	if (log_event_level > 1) {
-		printf("--- event --- enter %s()", __func__);
+		TRACE("--- event --- enter %s()", __func__);
 	}
 
 	// 이하는 ami_message 만 이리 온다고 가정하고 함수 작성한다.
@@ -228,7 +229,6 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 
 				strncpy(resp.responses.event, rdata.s, sizeof(resp.responses.event) - 1);
 				parse_amievent(resp.responses);
-				rdata.reset_data();
 
 
 				uint32_t curr_id = atoi(get_amivalue(resp.responses, "ActionID")); // response의 action id
@@ -236,14 +236,15 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				if (curr_id < manage.actionid) {
 					// 이전 액션의 결과면 패스... 다음 것을 기다려야 한다
 					manage.resp_unlock();
-					return tst_suspend;
+					// Response: 이벤트를 처리하는 핸들러가 있다면 호출해 주여야 한다...
+					goto check_ami_event_handler;
 				}
 				else if (curr_id > manage.actionid) {
 					// 이후 액션의 결과면 오류 처리
 					resp.mode = action_response;
 					resp.result = -2;
 					sprintf(resp.msg, "action id is past...");
-					bzero(&resp.responses, sizeof(resp.responses));
+					// bzero(&resp.responses, sizeof(resp.responses));
 				}
 				else {
 					resp.mode = action_response;
@@ -262,10 +263,17 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				// 싱크로 동작하는 ami sction 요청이 있다. 통보해 주자
 				pthread_cond_signal(&manage.condResp);
 				manage.resp_unlock();
+				rdata.reset_data();
+				return tst_suspend;
+			} else {
+				// AMI_MANAGE::ami_sync() 함수 사용이 잘목 되었다 확인하라!!!!!
+				// AMI_MANAGE::ami_sync() 함수를 잘못 수정하면 이리올 수도 있다....
+				manage.pResp = NULL;
+				TRACE("AMI_MANAGE::ami_sync() 함수를 잘못 수정한것 같다. 확인하시라!");
 			}
-			return tst_suspend;
 		}
-		
+
+check_ami_event_handler:
 		char* ptr = strchr(rdata.s, ':');
 		if (*ptr && *++ptr == ' ') {
 			++ptr;
@@ -279,7 +287,11 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				AMI_EVENTS log;
 				strncpy(log.event, rdata.s, rdata.com_len);
 				parse_amievent(log);
-				printf("--- event --- %s --- %s", get_amivalue(log, "Channel"), ev_id);
+				if (log_event_level > 2) {
+					logging_events(log);
+				} else {
+					TRACE("--- event --- %s --- %s\n", get_amivalue(log, "Channel"), ev_id);
+				}
 			}
 			map<const char*, void*>::iterator it;
 			for (it = g_process.begin(); it != g_process.end(); it++) {
@@ -299,13 +311,6 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 				}
 			}
 		}
-#if 0
-		AMI_EVENTS events;
-		strncpy(events.event, rdata.s, rdata.com_len);
-		parse_amievent(events);
-		logging_events(events);
-#endif
-
 	} else if (psocket->events & EPOLLOUT) {
 		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
 		TRACE("---send remain(%d).....\n", psocket->send->checked_len);
@@ -358,10 +363,6 @@ ATP_STAT process_events(PATP_DATA atp_data)
 
 	AMI_EVENTS& events = *(PAMI_EVENTS)&atp_data->s;
 	events.nThreadNo = atp_data->threadNo;
-
-#if 0
-	logging_events(events);
-#endif
 
 	// 등록된 이벤트를 처리한다.
 

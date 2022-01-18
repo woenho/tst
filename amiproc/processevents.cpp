@@ -1,6 +1,6 @@
 /*
 * amiproc.cpp 에 있는 ami_event() 함수가 입력되는 이벤트메시지를 분리하여 AMI_EVENTS 구조체에 넣는다
-* 이 파일은 그 이벤트둘 중 처리할 것으로 g_process 에 등록된 이벤트 처리 함수들을 모아 놓는다
+* 이 파일은 g_process 에 등록된 이벤트 처리 함수들을 모아 놓는다
 * 즉 실제 이벤트를 처리하는 함수들은 여기에 모아놓는다
 */
 #include "amiaction.h"
@@ -123,7 +123,6 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 		DestLinkedid: 1636598043.6
 		DialStatus: ANSWER
 	*/
-
 	const char* szExten = NULL;
 	const char* szChannel = NULL;
 #if !defined(USE_USEREVENT_CALLSTARTED)
@@ -133,7 +132,7 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 	const char* szDestUniqueid = NULL;
 	const char* szCallerIDNum = NULL;
 	const char* szDialStatus = NULL;
-	char* p;
+
 
 	// char buf[10240] = { 0 };
 	// int len, rc=0;
