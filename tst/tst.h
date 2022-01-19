@@ -53,8 +53,9 @@
 	#define ADDRESS(a)		((ulong)a)
 #endif
 
-namespace tst {
+extern char tstCompileDate[20];	// tst 모듈 컴파일 할때 마다 해당 시각 설정됨
 
+namespace tst {
 	struct TST_USER_T;		// 포인터 선언..
 	struct TST_SOCKET_T;	// 포인터 선언..
 	class tstpool;			// 포인터 선언..
@@ -177,7 +178,7 @@ namespace tst {
 		struct timespec	begin_time;		// 마지막 수행한 잡의 수행 시작 시각
 		struct timespec	end_time;		// 마지막 수행한 잡의 수행 종료 시각
 		// 32bit , 64bit 공통으로 사용하기 위해 uint64_t 지정
-		uint64_t		sum_time;		// 수행 시간의 합 (milliseconds)
+		uint64_t		sum_time;		// milliseconds (수행 시간의 합)
 		uint64_t		most_elapsed;	// nano seconds. 타스크 처리사간 중 가장 오래 걸린 사긴은?
 		uint64_t		exec_count;		// 쓰레드가 요청을 실행한 건수
 		uint64_t		idle_count;		// 쓰레드가 쉬고있다
