@@ -22,7 +22,7 @@ TST_STAT echo(PTST_SOCKET psocket)
 	if (psocket && psocket->events & EPOLLIN) {
 		if (psocket->recv) {
 			TST_DATA& data = *psocket->recv;
-			uint remain = data.s_len - data.result_len;
+			uint remain = data.s_len - data.com_len;
 			printf("recv data len(%d), remain buffer(%d)\n", data.checked_len, remain);
 			if (data.checked_len > remain) {
 				printf("Not enought remain buffer(%d/%d)\n", data.checked_len, remain);
@@ -40,16 +40,16 @@ TST_STAT echo(PTST_SOCKET psocket)
 					data.result_len++;
 				}
 #else
-				char* p = data.s + data.result_len;
-				data.result_len += read(psocket->sd, data.s + data.result_len, data.checked_len);
-				data.s[data.result_len] = '\0';
+				char* p = data.s + data.com_len;
+				data.com_len += read(psocket->sd, data.s + data.com_len, data.checked_len);
+				data.s[data.com_len] = '\0';
 				printf("%s", p);
 #if 0
 				psocket->send->req_len = sprintf(psocket->send->s, "echo msg:%s:", p);
 #else
 				psocket->send->req_len = sprintf(psocket->send->s, "%s", p);
 #endif
-				psocket->send->result_len = write(psocket->sd, psocket->send->s, psocket->send->req_len);
+				psocket->send->com_len = write(psocket->sd, psocket->send->s, psocket->send->req_len);
 
 #endif
 				data.reset_data();
@@ -88,8 +88,8 @@ TST_STAT first(PTST_SOCKET psocket)
 {
 	// *** 이 함수는 메인 쓰레드가 호출하는 것으로 직접 write 하지 말자. 
 	psocket->send->req_len = sprintf(psocket->send->s, "--- Wellcome to echo test server...\n");
-	psocket->send->result_len = 0;
-	printf("--- request first send rew_len=%d, result_len=%d :%s:\n", psocket->send->req_len, psocket->send->result_len, psocket->send->s);
+	psocket->send->com_len = 0;
+	printf("--- request first send rew_len=%d, result_len=%d :%s:\n", psocket->send->req_len, psocket->send->com_len, psocket->send->s);
 
 	return tst_send; /// *** 반드시 tst_send 를 설정해야 워크쓰레드가 sned 에 설정된 메시지를 보내준다./
 }
@@ -151,7 +151,7 @@ int main(int argc, char* argv[])
 			PTST_SOCKET socket = it_connect->second;
 
 			socket->send->req_len = sprintf(socket->send->s, "--- good bye. about %d seconds...\n", i);
-			socket->send->result_len = 0;
+			socket->send->com_len = 0;
 
 			printf("--- request send to sd=%d :%s:\n", socket->sd, socket->send->s);
 

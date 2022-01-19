@@ -23,9 +23,11 @@ ifeq (release, $(findstring release, $(MAKECMDGOALS))) #"make clean release"으�
 	LFLAGS += -ltst
 else
 	CFLAGS += $(CFLAGS_DEBUG)
-	LFLAGS += -ltst_d
 ifeq (debugtrace, $(findstring debugtrace, $(MAKECMDGOALS))) #"make clean debugtrace"으로 clean 다음에 연이어 debugtrace 나올 수가 있다.
 	CFLAGS += -DDEBUGTRACE
+	LFLAGS += -ltst_t
+else
+	LFLAGS += -ltst_d
 endif
 endif
 
