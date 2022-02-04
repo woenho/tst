@@ -20,16 +20,23 @@
 #include "amiaction.h"
 #include "http.h"
 #include "processevents.h"
-
+#include "websocket.h"
 
 tstpool server;						// 기본적인 tcp epoll 관리쓰레드 풀 클래스 객체
 PTST_SOCKET ami_socket = NULL;		// ami 연결용 TST_SOCKET 구조체로 new 로 직접 생성하여 server.addsocket(ami_socket)으로 추가등록하고 epoll 도 직접 등록한다.
 map<const char*, void*> g_process;	// ami event 중 처리하고자 하는 이벹에 대한 함수포인터를 등록해 둔다
+
+#if defined(DEBUGTRACE)
+int log_event_level = 2;				// 0이 아닌 값이 설정되면 event 명을 로깅한다
+#elif defined(DEBUG)
+int log_event_level = 1;				// 0이 아닌 값이 설정되면 event 명을 로깅한다
+#else
 int log_event_level = 0;				// 0이 아닌 값이 설정되면 event 명을 로깅한다
+#endif
 
 void* rm_ami_socket(tst::TST_USER_T* puser) {
 	
-	if (!puser || puser->s_len != (sizeof(TST_USER) + sizeof(AMI_MANAGE)))
+	if (!puser || puser->s_len != sizeof(AMI_MANAGE))
 		return NULL;
 
 	PAMI_MANAGE ami_manage = (PAMI_MANAGE)puser->s;
@@ -54,7 +61,7 @@ void logging_events(AMI_EVENTS& events)
 	for (i = 0; i < events.rec_count; i++) {
 		len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
 	}
-	TRACE("--- %s(atp threadno:%d)...\n%s", __func__, events.nThreadNo, msg);
+	TRACE("--- %s(atp threadno:%d)...\n%s\n", __func__, events.nThreadNo, msg);
 }
 
 int parse_amievent(AMI_EVENTS& events) {
@@ -88,7 +95,12 @@ int parse_amievent(AMI_EVENTS& events) {
 	return events.rec_count;
 }
 
-PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
+PAMI_RESPONSE AMI_MANAGE::ami_sync(const char* action, bool logprint)
+{
+	return ami_sync(logprint, action);
+}
+
+PAMI_RESPONSE AMI_MANAGE::ami_sync(bool logprint, const char* fmt, ...)
 {
 	PAMI_RESPONSE pResponse = new AMI_RESPONSE;
 
@@ -97,18 +109,27 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 		strcpy(pResponse->msg, "AMI서버에 연결되지 않음");
 		return pResponse;
 	}
+	if (ami_socket->send->s == fmt) {
+		pResponse->result = -98;
+		strcpy(pResponse->msg, "action 지정은 send 버퍼를 이용하지 마시오.");
+		return pResponse;
+	}
 
 	TST_DATA& sdata = *ami_socket->send;
+
 	ami_lock();
 	resp_lock();
 
-	sdata.req_len = sprintf(sdata.s,
-		"%s"
-		"ActionID: %d\n"
-		"\n"
-		, action
+	va_list ap;
+	va_start(ap, fmt);
+	sdata.req_len = vsnprintf(sdata.s, sdata.s_len - 1, fmt, ap);
+	va_end(ap);
+
+	sprintf(sdata.s + sdata.req_len,
+		"ActionID: %d\n\n"
 		, ++actionid
-	);
+		);
+	sdata.req_len = strlen((const char*)sdata.s);
 	TRACE("ami_sync action ---------\n%s", sdata.s);
 	struct timespec waittime;
 	clock_gettime(CLOCK_REALTIME, &waittime);	// NTP영향받아야 함
@@ -148,19 +169,29 @@ PAMI_RESPONSE AMI_MANAGE::ami_sync(char* action, bool logprint)
 	return pResponse;
 }
 
-void AMI_MANAGE::ami_async(char* action) {
+void AMI_MANAGE::ami_async(const char* fmt, ...)
+{
 	if (!ami_socket || ami_socket->type != sock_client)
 		return;
+	if (ami_socket->send->s == fmt) {
+		TRACE("%s() action 지정은 send 버퍼를 이용하지 마시오.", __func__);
+		return;
+	}
 
 	ami_lock();
 	TST_DATA& sdata = *ami_socket->send;
-	sdata.req_len = sprintf(sdata.s,
-		"%s"
-		"ActionID: %d\n"
-		"\n"
-		, action
+
+	va_list ap;
+	va_start(ap, fmt);
+	sdata.req_len = vsnprintf(sdata.s, sdata.s_len - 1, fmt, ap);
+	va_end(ap);
+
+	sprintf(sdata.s + sdata.req_len,
+		"ActionID: %d\n\n"
 		, ++actionid
 	);
+	sdata.req_len = strlen((const char*)sdata.s);
+
 	TRACE("ami_async action ---------\n%s", sdata.s);
 	write(ami_socket->sd, sdata.s, sdata.req_len);
 	ami_unlock();
@@ -181,7 +212,7 @@ TST_STAT ami_event(PTST_SOCKET psocket) {
 	}
 
 	if (log_event_level > 1) {
-		TRACE("--- event --- enter %s()", __func__);
+		TRACE("--- enter %s()", __func__);
 	}
 
 	// 이하는 ami_message 만 이리 온다고 가정하고 함수 작성한다.
@@ -290,7 +321,7 @@ check_ami_event_handler:
 				if (log_event_level > 2) {
 					logging_events(log);
 				} else {
-					TRACE("--- event --- %s --- %s\n", get_amivalue(log, "Channel"), ev_id);
+					TRACE("--- event --- %s --- %s", get_amivalue(log, "Channel"), ev_id);
 				}
 			}
 			map<const char*, void*>::iterator it;
@@ -313,12 +344,11 @@ check_ami_event_handler:
 		}
 	} else if (psocket->events & EPOLLOUT) {
 		clock_gettime(CLOCK_REALTIME, &sdata.trans_time);
-		TRACE("---send remain(%d).....\n", psocket->send->checked_len);
-
+		TRACE("---send remain(%d).....", psocket->send->checked_len);
 	} else {
 		if (psocket->events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR)) {
 			// 연결이 끊어졌다.
-			TRACE("---흐미 AMI 끊어졌다.....\n");
+			TRACE("---흐미 AMI 끊어졌다.....");
 			ami_socket = NULL;
 		}
 
@@ -334,13 +364,13 @@ TST_STAT my_disconnected(PTST_SOCKET psocket) {
 
 	if (psocket == ami_socket) {
 		if (psocket->user_data->type == ami_base) {
-			TRACE("--- 흐미 ami 끊어졌다.....\n");
+			TRACE("--- 흐미 ami 끊어졌다.....");
 			ami_socket = NULL;
 		}
 	}
 	else {
 #ifdef DEBUG
-		TRACE("--- disconnected client socket....%s(%s:%d) \n", __func__, inet_ntoa(psocket->client.sin_addr), ntohs(psocket->client.sin_port));
+//		conft("--- disconnected client socket....%s(%s:%d)", __func__, inet_ntoa(psocket->client.sin_addr), ntohs(psocket->client.sin_port));
 #endif
 	}
 
@@ -412,6 +442,12 @@ int main(int argc, char* argv[])
 	g_route["/keepalive"] = (void*)http_alive;
 	for (it = g_route.begin(); it != g_route.end(); it++) {
 		TRACE(":%s: http route func address -> %lX\n", it->first, ADDRESS(it->second));
+	}
+
+	g_websocket.clear();
+	g_websocket["/alive"] = (void*)websocket_alive;
+	for (it = g_route.begin(); it != g_route.end(); it++) {
+		TRACE(":%s: websocket route func address -> %lX\n", it->first, ADDRESS(it->second));
 	}
 
 	// -------------------------------------------------------------------------------------

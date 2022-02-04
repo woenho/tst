@@ -52,9 +52,8 @@ typedef struct AMI_MANAGE_T {
 	uint32_t actionid;					// AMI 명령을 보내는 순번 
 
 	static PTST_USER alloc() {
-		uint32_t s_len = sizeof(TST_USER) + sizeof(struct AMI_MANAGE_T);
-		PTST_USER puser = (PTST_USER)calloc(s_len,1);
-		puser->s_len = s_len;
+		PTST_USER puser = (PTST_USER)calloc(sizeof(TST_USER) + sizeof(struct AMI_MANAGE_T), 1);
+		puser->s_len = sizeof(struct AMI_MANAGE_T);
 		puser->type = ami_base;
 		puser->removeBuffer = (CleanFunction)rm_ami_socket;
 		((struct AMI_MANAGE_T*)puser->s)->init();
@@ -89,8 +88,9 @@ typedef struct AMI_MANAGE_T {
 		return pthread_mutex_unlock(&mutexResp);
 	}
 
-	PAMI_RESPONSE ami_sync(char* action, bool logprint = true);
-	void ami_async(char* action);
+	PAMI_RESPONSE ami_sync(bool logprint, const char* fmt, ...);
+	PAMI_RESPONSE ami_sync(const char* action, bool logprint = true);
+	void ami_async(const char* fmt, ...);
 
 }AMI_MANAGE, *PAMI_MANAGE;
 
@@ -104,7 +104,6 @@ const char* get_amivalue(AMI_EVENTS& events, const char* key);
 void logging_events(AMI_EVENTS& events);
 
 TST_STAT ami_event(PTST_SOCKET psocket);
-TST_STAT http(PTST_SOCKET psocket);
 TST_STAT my_disconnected(PTST_SOCKET psocket);
 ATP_STAT atpfunc(PATP_DATA atpdata);
 ATP_STAT process_events(PATP_DATA atp_data);

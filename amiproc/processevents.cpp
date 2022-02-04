@@ -4,9 +4,8 @@
 * 즉 실제 이벤트를 처리하는 함수들은 여기에 모아놓는다
 */
 #include "amiaction.h"
-#include "http.h"
 #include "processevents.h"
-
+#include "http.h"
 
 ATP_STAT event_hangup(AMI_EVENTS& events)
 {
@@ -136,7 +135,7 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 
 	// char buf[10240] = { 0 };
 	// int len, rc=0;
-
+	
 
 	try {
 
@@ -144,21 +143,21 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 		szCallerIDNum = get_amivalue(events, "CallerIDNum");
 
 #if defined(USE_USEREVENT_CALLSTARTED)
-		if (get_callinfo(szCallerIDNum, &ci)) {
-			TRACE("memcached get not found, caller=%s\n", szCallerIDNum);
-			throw util_exception(999, "memcached get not found");
-		}
+			if (get_callinfo(szCallerIDNum, &ci)) {
+				TRACE("memcached get not found, caller=%s\n", szCallerIDNum);
+				throw util_exception(999, "memcached get not found");
+			}
 #endif
-		int i, len = 0;
-		char msg[2048];
-		len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
-		for (i = 0; i < events.rec_count; i++) {
-			len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
-		}
-		TRACE("%s", msg);
+			int i, len = 0;
+			char msg[2048];
+			len += sprintf(msg + len, "--- %s(atp threadno:%d)...\n", __func__, events.nThreadNo);
+			for (i = 0; i < events.rec_count; i++) {
+				len += sprintf(msg + len, "%s%s: %s\n", i ? "    " : "", events.key[i], events.value[i]);
+			}
+			TRACE("%s", msg);
 
 
-		if (!strcmp(szDialStatus, "ANSWER")) {
+			if (!strcmp(szDialStatus, "ANSWER")) {
 			// memcached에 다이알로그 등록
 			szExten = get_amivalue(events, "Exten");
 			szChannel = get_amivalue(events, "Channel");
@@ -167,7 +166,7 @@ ATP_STAT event_dialend(AMI_EVENTS& events)
 			szDestChannel = get_amivalue(events, "DestChannel");
 			szDestUniqueid = get_amivalue(events, "DestUniqueid");
 
-
+			
 
 
 

@@ -5,11 +5,16 @@
 .SUFFIXES = .cpp .o
 CXX=g++
 
+# sha1.c 는 컴파일 하지 않고 opelssl 에 있는 함수를 사용한다.
+# sha1.c, sha1.h 는 참조로 프로젝트에 추가만 한다
+
 TARGET = amiproc
 SRCS =  http.cpp \
+		http_routes.cpp \
+		websocket.cpp \
+		ws_routes.cpp \
 		processevents.cpp \
 		amiaction.cpp \
-		routes.cpp \
 		amiproc.cpp
 OBJS = $(SRCS:.cpp=.o)
 
@@ -20,7 +25,7 @@ CFLAGS += -Wno-unused-parameter -Wno-missing-field-initializers -Wno-unused-func
 CFLAGS += -I../include
 CFLAGS += -D_REENTRANT -D_PTHREADS
 
-LFLAGS  = -lm -ldl -lpthread -L../lib 
+LFLAGS  = -lm -ldl -lpthread -lcrypto -L../lib 
 
 ifeq (release, $(findstring release, $(MAKECMDGOALS))) #"make clean release"으로 clean 다음에 연이어 release가 나올 수가 있다.
 	CFLAGS += $(CFLAGS_RELEASE)
