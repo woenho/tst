@@ -59,6 +59,8 @@
 #endif
 
 // casting for 64bit os -> ((ulong)a), casting for 32bit os -> ((uint)a)
+// 32비트에서는 ulong -> 32bit, uint -> 32bit
+// 64비트에서는 ulong -> 64bit, uint -> 32bit
 #if ( __WORDSIZE == 32 )
 	#define ADDRESS(a)		((uint)a)
 #else
