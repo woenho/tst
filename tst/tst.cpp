@@ -903,7 +903,7 @@ void tstpool::closesocket(int sd)
 	map<int,PTST_SOCKET>::iterator it = m_connect.find(sd);
 	if (it != m_connect.end()) {
 		socket = it->second;
-		m_connect.erase(it);
+		m_connect.erase(it); // socket은 삭제하지 않고 map 정보만 삭제한다.
 	}
 
 	pthread_mutex_unlock(&m_mutexConnect);
@@ -939,7 +939,6 @@ void tstpool::closesocket(int sd)
 		}
 
 		close(sd);
-		sd = 0;
 	}
 
 	if(socket)
