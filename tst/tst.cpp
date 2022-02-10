@@ -633,8 +633,10 @@ void* tst_work(void* param)
 			// 뮤텍스 락과 상관없이 epoll 은 등록하자마자 동작한다
 			pthread_mutex_lock(&me->mutex);
 			if (next == tst_disconnect) {
-				if (socket && socket->sd > 0)
+				if (socket && socket->sd > 0) {
 					me->pool->closesocket(socket->sd);
+					socket = NULL;
+				}
 				next = tst_suspend;
 			}
 			// 처리가 끝난 소켓 중 연결을 끊지 않은 소켓은 epoll에 수정등록한다
@@ -937,6 +939,7 @@ void tstpool::closesocket(int sd)
 		}
 
 		close(sd);
+		sd = 0;
 	}
 
 	if(socket)
